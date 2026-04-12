@@ -1,0 +1,104 @@
+{% extends "layout_app.html" %}
+
+{% block title %}Survey — {{ reunion.title }}{% endblock %}
+
+{% block breadcrumb %}
+<span class="text-gray-300 mx-2">/</span>
+<a href="/reunions/{{ reunion.id }}" class="text-sm text-gray-500 hover:text-gray-700">{{ reunion.title }}</a>
+<span class="text-gray-300 mx-2">/</span>
+<span class="text-sm text-gray-600">Survey</span>
+{% endblock %}
+
+{% block content %}
+<div class="flex items-center justify-between mb-6">
+  <div>
+    <h1 class="text-2xl font-bold text-gray-900">Post-Reunion Survey</h1>
+    <p class="mt-1 text-sm text-gray-500">Share your feedback to help plan the next one.</p>
+  </div>
+  {% if is_ra %}
+  <button onclick="document.getElementById('add-q-modal').classList.remove('hidden')"
+          class="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold rounded-lg">
+    + Add question
+  </button>
+  {% endif %}
+</div>
+
+{% if questions.is_empty() %}
+<div class="text-center py-12 bg-white rounded-xl border border-dashed border-gray-200">
+  <span class="text-4xl">📝</span>
+  <p class="mt-3 text-gray-500">No survey questions yet.</p>
+</div>
+{% else %}
+<div class="space-y-4">
+  {% for q in questions %}
+  <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
+    <div class="flex justify-between items-start">
+      <h2 class="font-semibold text-gray-900">{{ q.question.question_text }}</h2>
+      {% if is_ra %}
+      <button onclick="confirmAction('Delete this question?',()=>apiFetch('DELETE','/reunions/{{ reunion.id }}/survey/questions/{{ q.question.id }}'))"
+              class="text-xs text-red-400 hover:text-red-600 flex-shrink-0 ml-3">Delete</button>
+      {% endif %}
+    </div>
+    {% if can_respond %}
+    <div class="mt-3">
+      <textarea id="resp-{{ q.question.id }}" rows="3"
+                placeholder="Your answer…"
+                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                >{{ q.my_response }}</textarea>
+      <button onclick="saveResponse('{{ reunion.id }}','{{ q.question.id }}')"
+              class="mt-2 px-4 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold rounded-lg">
+        Save
+      </button>
+    </div>
+    {% else %}
+    <p class="mt-2 text-sm text-gray-500 italic">Survey responses are collected after the reunion ends.</p>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if is_ra %}
+<!-- Add question modal -->
+<div id="add-q-modal" class="hidden fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+  <div class="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+    <h2 class="text-lg font-semibold text-gray-900 mb-4">Add Survey Question</h2>
+    <form id="add-q-form" class="space-y-4">
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Question *</label>
+        <input id="q-prompt" type="text" required
+               placeholder="e.g. What was your favourite activity?"
+               class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
+      </div>
+      <div class="flex justify-end space-x-3 pt-2">
+        <button type="button" onclick="document.getElementById('add-q-modal').classList.add('hidden')"
+                class="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">Cancel</button>
+        <button type="submit" class="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold rounded-lg">Add</button>
+      </div>
+    </form>
+  </div>
+</div>
+<script>
+document.getElementById('add-q-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  try {
+    await apiFetch('POST', '/reunions/{{ reunion.id }}/survey/questions', {
+      question_text: document.getElementById('q-prompt').value,
+      order_index: 0,
+    });
+    window.location.reload();
+  } catch (err) { showToast(err.message, 'error'); }
+});
+</script>
+{% endif %}
+
+<script>
+async function saveResponse(reunionId, questionId) {
+  const text = document.getElementById('resp-' + questionId).value;
+  try {
+    await apiFetch('PUT', `/reunions/${reunionId}/survey/questions/${questionId}/response`, { response_text: text });
+    showToast('Response saved', 'success');
+  } catch (e) { showToast(e.message, 'error'); }
+}
+</script>
+{% endblock %}

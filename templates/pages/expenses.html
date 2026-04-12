@@ -1,0 +1,139 @@
+{% extends "layout_app.html" %}
+
+{% block title %}Expenses — {{ reunion.title }}{% endblock %}
+
+{% block breadcrumb %}
+<span class="text-gray-300 mx-2">/</span>
+<a href="/reunions/{{ reunion.id }}" class="text-sm text-gray-500 hover:text-gray-700">{{ reunion.title }}</a>
+<span class="text-gray-300 mx-2">/</span>
+<span class="text-sm text-gray-600">Expenses</span>
+{% endblock %}
+
+{% block content %}
+<div class="flex items-center justify-between mb-6">
+  <h1 class="text-2xl font-bold text-gray-900">Shared Expenses</h1>
+  <div class="flex gap-2">
+    <a href="/api/reunions/{{ reunion.id }}/expenses/balances.csv"
+       class="px-3 py-1.5 text-sm font-medium text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50">
+      ⬇ CSV
+    </a>
+    <button onclick="document.getElementById('add-exp-modal').classList.remove('hidden')"
+            class="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold rounded-lg">
+      + Add expense
+    </button>
+  </div>
+</div>
+
+<!-- Balances summary -->
+{% if !balances.is_empty() %}
+<div class="bg-white rounded-xl border border-gray-100 shadow-sm p-4 mb-6">
+  <h2 class="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Balances</h2>
+  <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+    {% for b in balances %}
+    <div class="text-center p-3 rounded-lg {% if b.net_cents > 0 %}bg-green-50{% else if b.net_cents < 0 %}bg-red-50{% else %}bg-gray-50{% endif %}">
+      <p class="text-xs text-gray-500 mb-1 truncate">{{ b.user_name }}</p>
+      <p class="text-lg font-bold {% if b.net_cents > 0 %}text-green-700{% else if b.net_cents < 0 %}text-red-600{% else %}text-gray-600{% endif %}">
+        {% if b.net_cents >= 0 %}+{% endif %}${{ b.net_dollars }}
+      </p>
+      <p class="text-xs {% if b.net_cents > 0 %}text-green-500{% else if b.net_cents < 0 %}text-red-400{% else %}text-gray-400{% endif %}">
+        {% if b.net_cents > 0 %}owed{% else if b.net_cents < 0 %}owes{% else %}even{% endif %}
+      </p>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<!-- Expense list -->
+{% if expenses.is_empty() %}
+<div class="text-center py-12 bg-white rounded-xl border border-dashed border-gray-200">
+  <span class="text-4xl">💰</span>
+  <p class="mt-3 text-gray-500">No expenses yet.</p>
+</div>
+{% else %}
+<div class="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+  <table class="w-full text-sm">
+    <thead class="bg-gray-50 border-b border-gray-100">
+      <tr>
+        <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Description</th>
+        <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Paid by</th>
+        <th class="text-right px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Amount</th>
+        <th class="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Date</th>
+        {% if is_ra %}<th class="px-4 py-3"></th>{% endif %}
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-50">
+      {% for e in expenses %}
+      <tr class="hover:bg-gray-50">
+        <td class="px-4 py-3 text-gray-900 font-medium">{{ e.expense.description }}</td>
+        <td class="px-4 py-3 text-gray-600">{{ e.paid_by_name }}</td>
+        <td class="px-4 py-3 text-right font-semibold text-gray-900">{{ e.amount_str }}</td>
+        <td class="px-4 py-3 text-gray-400">{{ e.expense.expense_date }}</td>
+        {% if is_ra %}
+        <td class="px-4 py-3">
+          <button onclick="confirmAction('Delete this expense?',()=>apiFetch('DELETE','/reunions/{{ reunion.id }}/expenses/{{ e.expense.id }}'))"
+                  class="text-red-400 hover:text-red-600 text-xs">Delete</button>
+        </td>
+        {% endif %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<!-- Add expense modal -->
+<div id="add-exp-modal" class="hidden fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+  <div class="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+    <h2 class="text-lg font-semibold text-gray-900 mb-4">Add Expense</h2>
+    <form id="add-exp-form" class="space-y-4">
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Description *</label>
+        <input id="exp-desc" type="text" required placeholder="e.g. Groceries for Sunday dinner"
+               class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Amount ($) *</label>
+          <input id="exp-amount" type="number" min="0.01" step="0.01" required
+                 class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Date *</label>
+          <input id="exp-date" type="date" required
+                 class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
+        </div>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Paid by *</label>
+        <select id="exp-paid-by"
+                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
+          {% for u in members %}
+          <option value="{{ u.id }}" {% if u.id == current_user_id %}selected{% endif %}>{{ u.display_name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="flex justify-end space-x-3 pt-2">
+        <button type="button" onclick="document.getElementById('add-exp-modal').classList.add('hidden')"
+                class="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">Cancel</button>
+        <button type="submit" class="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold rounded-lg">Add</button>
+      </div>
+    </form>
+  </div>
+</div>
+<script>
+document.getElementById('add-exp-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  try {
+    await apiFetch('POST', '/reunions/{{ reunion.id }}/expenses', {
+      description: document.getElementById('exp-desc').value,
+      amount_cents: Math.round(parseFloat(document.getElementById('exp-amount').value) * 100),
+      expense_date: document.getElementById('exp-date').value,
+      paid_by_user_id: document.getElementById('exp-paid-by').value,
+      split_among: [],
+    });
+    window.location.reload();
+  } catch (err) { showToast(err.message, 'error'); }
+});
+</script>
+{% endblock %}

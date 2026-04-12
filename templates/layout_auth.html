@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Familyer{% endblock %} — Familyer</title>
+  <!-- Anti-flash: apply dark class before any paint -->
+  <script>
+    (function(){
+      var t = localStorage.getItem('theme') || 'system';
+      if (t === 'dark' || (t === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+        document.documentElement.classList.add('dark');
+      }
+    })();
+  </script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="/assets/app.css">
+</head>
+<body class="h-full bg-amber-50">
+  <div id="toast-container"></div>
+  <!-- Theme toggle (fixed, top-right) -->
+  <button id="theme-toggle" onclick="cycleTheme()" title="Toggle theme"
+          class="fixed top-3 right-4 p-1.5 rounded-lg text-gray-400 hover:text-amber-600 hover:bg-white text-base leading-none z-50">
+    💻
+  </button>
+  <div class="min-h-full flex flex-col justify-center py-12 sm:px-6 lg:px-8">
+    <div class="sm:mx-auto sm:w-full sm:max-w-md">
+      <div class="text-center">
+        <span class="text-5xl">🏡</span>
+        <h1 class="mt-2 text-3xl font-bold text-amber-700">Familyer</h1>
+      </div>
+      <h2 class="mt-2 text-center text-lg text-gray-600">{% block heading %}{% endblock %}</h2>
+    </div>
+    <div class="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
+      {% if let Some(f) = flash %}
+      <div class="mb-4 px-4 py-3 rounded-lg border {% if f.kind == "error" %}bg-red-50 border-red-200 text-red-700{% else if f.kind == "success" %}bg-green-50 border-green-200 text-green-700{% else %}bg-blue-50 border-blue-200 text-blue-700{% endif %} text-sm">
+        {{ f.text }}
+      </div>
+      {% endif %}
+      <div class="bg-white py-8 px-4 shadow-sm rounded-xl border border-gray-100 sm:px-10">
+        {% block content %}{% endblock %}
+      </div>
+    </div>
+  </div>
+  <script src="/assets/app.js"></script>
+</body>
+</html>

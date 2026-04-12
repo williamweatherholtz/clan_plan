@@ -1,0 +1,78 @@
+{% extends "layout_app.html" %}
+
+{% block title %}Availability — {{ reunion.title }}{% endblock %}
+
+{% block breadcrumb %}
+<span class="text-gray-300 mx-2">/</span>
+<a href="/reunions/{{ reunion.id }}" class="text-sm text-gray-500 hover:text-gray-700">{{ reunion.title }}</a>
+<span class="text-gray-300 mx-2">/</span>
+<span class="text-sm text-gray-600">Availability</span>
+{% endblock %}
+
+{% block content %}
+<div class="mb-6">
+  <h1 class="text-2xl font-bold text-gray-900">Your Availability</h1>
+  <p class="mt-1 text-gray-500 text-sm">Click dates to toggle. Changes save automatically.</p>
+</div>
+
+<div x-data="availCalendar({{ my_dates_json }})" class="space-y-6">
+  {% for month in months %}
+  <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+    <h2 class="text-base font-semibold text-gray-800 mb-3">{{ month.name }}</h2>
+    <div class="grid grid-cols-7 gap-1 text-center text-xs text-gray-400 mb-1">
+      <div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div><div>Sun</div>
+    </div>
+    {% for week in month.weeks %}
+    <div class="grid grid-cols-7 gap-1">
+      {% for day_opt in week %}
+      {% match day_opt %}
+      {% when Some with (d) %}
+      {% let ds = d.format("%Y-%m-%d").to_string() %}
+      <button
+        type="button"
+        class="day-avail rounded-lg p-2 text-sm"
+        :class="isSelected('{{ ds }}') ? 'sel' : ''"
+        @click="toggle('{{ ds }}')"
+        {% if !editable %}disabled{% endif %}>
+        {{ d.day() }}
+      </button>
+      {% when None %}
+      <div></div>
+      {% endmatch %}
+      {% endfor %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endfor %}
+
+  {% if editable %}
+  <div class="flex justify-end">
+    <button @click="save('{{ reunion.id }}')"
+            class="px-6 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold rounded-lg transition-colors">
+      Save availability
+    </button>
+  </div>
+  {% endif %}
+</div>
+
+{% if is_ra %}
+<div class="mt-8 bg-white rounded-xl border border-gray-100 shadow-sm p-5">
+  <h2 class="font-semibold text-gray-900 mb-3">Availability Heatmap</h2>
+  {% if heatmap.is_empty() %}
+  <p class="text-sm text-gray-400">No responses yet.</p>
+  {% else %}
+  <div class="space-y-1">
+    {% for entry in heatmap %}
+    <div class="flex items-center gap-3">
+      <span class="text-sm text-gray-600 w-28 flex-shrink-0">{{ entry.date }}</span>
+      <div class="flex-1 bg-gray-100 rounded-full h-3 overflow-hidden">
+        <div class="h-full bg-amber-400 rounded-full" style="width: {{ entry.pct }}%"></div>
+      </div>
+      <span class="text-xs text-gray-500 w-12 text-right">{{ entry.count }} / {{ entry.total }}</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

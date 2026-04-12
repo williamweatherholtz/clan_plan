@@ -1,0 +1,126 @@
+/* Alpine.js cloak — hide elements until Alpine initialises */
+[x-cloak] { display: none !important; }
+
+/* Schedule block type accents (left-border colour) */
+.block-group    { border-left-color: #3B82F6; }
+.block-optional { border-left-color: #22C55E; }
+.block-meal     { border-left-color: #F59E0B; }
+.block-travel   { border-left-color: #8B5CF6; }
+
+/* Availability calendar cells */
+.day-avail       { cursor: pointer; transition: background-color 0.1s ease; }
+.day-avail.sel   { background-color: #F59E0B !important; color: white; font-weight: 600; }
+.day-avail:hover:not(.sel) { background-color: #FEF3C7; }
+.day-disabled    { pointer-events: none; color: #D1D5DB; }
+
+/* Toast container (top-right, z-toast) */
+#toast-container {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+@keyframes slide-in {
+  from { transform: translateX(100%); opacity: 0; }
+  to   { transform: translateX(0);    opacity: 1; }
+}
+.toast { animation: slide-in 0.2s ease-out; }
+
+/* Star rating inputs */
+.star-rating { display: inline-flex; flex-direction: row-reverse; gap: 2px; }
+.star-rating input[type="radio"] { display: none; }
+.star-rating label { cursor: pointer; font-size: 1.5rem; color: #D1D5DB; }
+.star-rating input[type="radio"]:checked ~ label,
+.star-rating label:hover,
+.star-rating label:hover ~ label { color: #F59E0B; }
+
+/* ── Dark mode ────────────────────────────────────────────────────────────────
+   <html class="dark"> is toggled by the theme switcher.
+   .dark .utilityClass beats Tailwind's .utilityClass on specificity (2 vs 1
+   class), so no !important needed for background/text/border overrides.
+   ─────────────────────────────────────────────────────────────────────────── */
+
+/* Page and nav structure */
+.dark body { background-color: #111827; color: #f9fafb; }
+.dark nav  { background-color: #111827 !important; border-color: #1f2937 !important; }
+
+/* Backgrounds */
+.dark .bg-white    { background-color: #1f2937; }
+.dark .bg-gray-50  { background-color: #111827; }
+.dark .bg-gray-100 { background-color: #374151; }
+.dark .bg-amber-50 { background-color: #111827; }
+
+/* Text */
+.dark .text-gray-900 { color: #f9fafb; }
+.dark .text-gray-800 { color: #f3f4f6; }
+.dark .text-gray-700 { color: #e5e7eb; }
+.dark .text-gray-600 { color: #d1d5db; }
+.dark .text-gray-500 { color: #9ca3af; }
+.dark .text-gray-400 { color: #6b7280; }
+
+/* Borders */
+.dark .border-gray-50  { border-color: #1f2937; }
+.dark .border-gray-100 { border-color: #374151; }
+.dark .border-gray-200 { border-color: #374151; }
+.dark .border-gray-300 { border-color: #4b5563; }
+
+/* Divide (sibling borders) */
+.dark .divide-gray-50  > * + * { border-color: #1f2937; }
+.dark .divide-gray-100 > * + * { border-color: #374151; }
+
+/* Hover states — escaped colon keeps the Tailwind class name intact in CSS */
+.dark .hover\:bg-gray-50:hover  { background-color: #1f2937; }
+.dark .hover\:bg-gray-100:hover { background-color: #374151; }
+.dark .hover\:bg-red-50:hover   { background-color: rgba(127,29,29,0.3); }
+
+/* Colour badges (keep hue, shift to dark-friendly tones) */
+.dark .bg-amber-100  { background-color: rgba(120,53,15,0.45); }
+.dark .text-amber-700 { color: #fcd34d; }
+.dark .bg-green-100  { background-color: rgba(20,83,45,0.45); }
+.dark .text-green-700 { color: #86efac; }
+.dark .bg-blue-50    { background-color: rgba(30,58,138,0.3); }
+.dark .bg-blue-100   { background-color: rgba(30,58,138,0.45); }
+.dark .text-blue-700  { color: #93c5fd; }
+.dark .bg-purple-100 { background-color: rgba(88,28,135,0.45); }
+.dark .text-purple-700 { color: #d8b4fe; }
+.dark .bg-red-50     { background-color: rgba(127,29,29,0.35); }
+.dark .border-red-200 { border-color: #991b1b; }
+.dark .text-red-700   { color: #fca5a5; }
+.dark .bg-green-50   { background-color: rgba(20,83,45,0.3); }
+.dark .border-green-200 { border-color: #15803d; }
+.dark .text-green-700  { color: #86efac; }
+
+/* Alert / flash bars */
+.dark .border-blue-200 { border-color: #1d4ed8; }
+.dark .text-blue-700   { color: #93c5fd; }
+
+/* Today-view block colours (JS-generated, same classes apply) */
+.dark .border-blue-300   { border-color: #60a5fa; }
+.dark .border-green-300  { border-color: #4ade80; }
+.dark .border-amber-300  { border-color: #fbbf24; }
+.dark .border-purple-300 { border-color: #a78bfa; }
+.dark .bg-purple-50 { background-color: rgba(88,28,135,0.3); }
+
+/* Form controls */
+.dark input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=submit]):not([type=button]):not([type=reset]),
+.dark textarea,
+.dark select {
+  background-color: #1f2937;
+  border-color: #4b5563;
+  color: #f9fafb;
+}
+.dark input::placeholder,
+.dark textarea::placeholder { color: #6b7280; }
+
+/* Shadows (deepen so cards are still visible on dark backgrounds) */
+.dark .shadow-sm { box-shadow: 0 1px 2px rgba(0,0,0,0.5); }
+.dark .shadow-lg { box-shadow: 0 10px 15px -3px rgba(0,0,0,0.6), 0 4px 6px -4px rgba(0,0,0,0.4); }
+.dark .shadow-xl { box-shadow: 0 20px 25px -5px rgba(0,0,0,0.6), 0 8px 10px -6px rgba(0,0,0,0.4); }
+
+/* Availability calendar in dark */
+.dark .day-avail:hover:not(.sel) { background-color: #374151; }
+.dark .day-disabled { color: #4b5563; }

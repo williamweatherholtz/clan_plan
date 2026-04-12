@@ -1,0 +1,169 @@
+{% extends "layout_app.html" %}
+
+{% block title %}Admin Panel{% endblock %}
+
+{% block content %}
+<div class="mb-6">
+  <h1 class="text-2xl font-bold text-gray-900">Admin Panel</h1>
+</div>
+
+<!-- Stats row -->
+<div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
+  <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-4 text-center">
+    <p class="text-2xl font-bold text-gray-900">{{ users.len() }}</p>
+    <p class="text-xs text-gray-500 mt-1">Total users</p>
+  </div>
+  <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-4 text-center">
+    <p class="text-2xl font-bold text-gray-900">{{ family_units.len() }}</p>
+    <p class="text-xs text-gray-500 mt-1">Family units</p>
+  </div>
+  <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-4 text-center">
+    <p class="text-2xl font-bold text-gray-900">{{ storage.total_files }}</p>
+    <p class="text-xs text-gray-500 mt-1">Media files</p>
+  </div>
+  <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-4 text-center">
+    <p class="text-2xl font-bold text-gray-900">{{ storage.total_mb }} MB</p>
+    <p class="text-xs text-gray-500 mt-1">Storage used</p>
+  </div>
+</div>
+
+<!-- Users -->
+<div class="bg-white rounded-xl border border-gray-100 shadow-sm mb-6">
+  <div class="flex items-center justify-between px-4 py-3 border-b border-gray-50">
+    <h2 class="font-semibold text-gray-900">Users</h2>
+  </div>
+  <div class="overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead class="bg-gray-50">
+        <tr>
+          <th class="text-left px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">Name</th>
+          <th class="text-left px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">Email</th>
+          <th class="text-left px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">Role</th>
+          <th class="text-left px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</th>
+          <th class="px-4 py-2"></th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-50">
+        {% for u in users %}
+        <tr class="hover:bg-gray-50">
+          <td class="px-4 py-3 font-medium text-gray-900">{{ u.display_name }}</td>
+          <td class="px-4 py-3 text-gray-500">{{ u.email }}</td>
+          <td class="px-4 py-3">
+            <span class="px-2 py-0.5 rounded-full text-xs font-medium
+              {% if u.role.label() == "sysadmin" %}bg-purple-100 text-purple-700{% else %}bg-gray-100 text-gray-600{% endif %}">
+              {{ u.role.label() }}
+            </span>
+          </td>
+          <td class="px-4 py-3">
+            {% if u.deactivated_at.is_some() %}
+            <span class="text-xs text-red-500">Deactivated</span>
+            {% else if u.email_verified_at.is_none() %}
+            <span class="text-xs text-amber-500">Unverified</span>
+            {% else %}
+            <span class="text-xs text-green-500">Active</span>
+            {% endif %}
+          </td>
+          <td class="px-4 py-3">
+            <div class="flex gap-2 justify-end">
+              {% if u.deactivated_at.is_some() %}
+              <button onclick="apiFetch('PATCH','/admin/users/{{ u.id }}',{deactivated:false}).then(()=>location.reload()).catch(e=>showToast(e.message,'error'))"
+                      class="text-xs text-green-600 hover:underline">Reactivate</button>
+              {% else %}
+              <button onclick="apiFetch('PATCH','/admin/users/{{ u.id }}',{deactivated:true}).then(()=>location.reload()).catch(e=>showToast(e.message,'error'))"
+                      class="text-xs text-red-500 hover:underline">Deactivate</button>
+              {% endif %}
+              {% if u.role.label() == "member" %}
+              <button onclick="apiFetch('PATCH','/admin/users/{{ u.id }}',{role:'sysadmin'}).then(()=>location.reload()).catch(e=>showToast(e.message,'error'))"
+                      class="text-xs text-purple-600 hover:underline">Make admin</button>
+              {% else %}
+              <button onclick="apiFetch('PATCH','/admin/users/{{ u.id }}',{role:'member'}).then(()=>location.reload()).catch(e=>showToast(e.message,'error'))"
+                      class="text-xs text-gray-500 hover:underline">Remove admin</button>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Family units -->
+<div class="bg-white rounded-xl border border-gray-100 shadow-sm mb-6">
+  <div class="flex items-center justify-between px-4 py-3 border-b border-gray-50">
+    <h2 class="font-semibold text-gray-900">Family Units</h2>
+    <button onclick="document.getElementById('add-fu-modal').classList.remove('hidden')"
+            class="px-3 py-1 bg-amber-500 text-white text-xs font-semibold rounded-lg hover:bg-amber-600">+ Add</button>
+  </div>
+  <div class="divide-y divide-gray-50">
+    {% for fu in family_units %}
+    <div class="flex items-center justify-between px-4 py-3">
+      <span class="text-sm font-medium text-gray-900">{{ fu.name }}</span>
+      <span class="text-xs text-gray-400">{{ fu.id }}</span>
+    </div>
+    {% endfor %}
+    {% if family_units.is_empty() %}
+    <div class="px-4 py-6 text-center text-sm text-gray-400">No family units yet.</div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Host rotation -->
+<div class="bg-white rounded-xl border border-gray-100 shadow-sm">
+  <div class="flex items-center justify-between px-4 py-3 border-b border-gray-50">
+    <h2 class="font-semibold text-gray-900">Host Rotation</h2>
+    <button onclick="document.getElementById('add-hr-modal').classList.remove('hidden')"
+            class="px-3 py-1 bg-amber-500 text-white text-xs font-semibold rounded-lg hover:bg-amber-600">+ Add entry</button>
+  </div>
+  <div class="divide-y divide-gray-50">
+    {% for hr in host_rotation %}
+    <div class="flex items-center justify-between px-4 py-3">
+      <div>
+        <span class="text-sm font-medium text-gray-900">{{ hr.family_unit_name }}</span>
+        {% if hr.is_next %}<span class="ml-2 text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">Next host</span>{% endif %}
+        {% if let Some(yr) = hr.reunion_year %}<span class="ml-2 text-xs text-gray-400">{{ yr }}</span>{% endif %}
+      </div>
+      <div class="flex gap-2">
+        {% if !hr.is_next %}
+        <button onclick="apiFetch('POST','/admin/host-rotation/{{ hr.id }}/set-next').then(()=>location.reload()).catch(e=>showToast(e.message,'error'))"
+                class="text-xs text-amber-600 hover:underline">Set as next</button>
+        {% endif %}
+        <button onclick="confirmAction('Remove this entry?',()=>apiFetch('DELETE','/admin/host-rotation/{{ hr.id }}'))"
+                class="text-xs text-red-400 hover:underline">Remove</button>
+      </div>
+    </div>
+    {% endfor %}
+    {% if host_rotation.is_empty() %}
+    <div class="px-4 py-6 text-center text-sm text-gray-400">No host rotation entries.</div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Add family unit modal -->
+<div id="add-fu-modal" class="hidden fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+  <div class="bg-white rounded-xl shadow-xl w-full max-w-sm p-6">
+    <h2 class="text-lg font-semibold text-gray-900 mb-4">Add Family Unit</h2>
+    <form id="add-fu-form" class="space-y-4">
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Name *</label>
+        <input id="fu-name" type="text" required placeholder="e.g. The Smith Family"
+               class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
+      </div>
+      <div class="flex justify-end space-x-3">
+        <button type="button" onclick="document.getElementById('add-fu-modal').classList.add('hidden')"
+                class="px-4 py-2 text-sm text-gray-600">Cancel</button>
+        <button type="submit" class="px-4 py-2 bg-amber-500 text-white text-sm font-semibold rounded-lg hover:bg-amber-600">Add</button>
+      </div>
+    </form>
+  </div>
+</div>
+<script>
+document.getElementById('add-fu-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  try {
+    await apiFetch('POST', '/admin/family-units', { name: document.getElementById('fu-name').value });
+    window.location.reload();
+  } catch (err) { showToast(err.message, 'error'); }
+});
+</script>
+{% endblock %}

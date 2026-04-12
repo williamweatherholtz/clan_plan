@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Familyer{% endblock %} — Familyer</title>
+  <!-- Anti-flash: apply dark class before any paint -->
+  <script>
+    (function(){
+      var t = localStorage.getItem('theme') || 'system';
+      if (t === 'dark' || (t === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+        document.documentElement.classList.add('dark');
+      }
+    })();
+  </script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <link rel="stylesheet" href="/assets/app.css">
+</head>
+<body class="min-h-full bg-gray-50">
+  <div id="toast-container"></div>
+
+  <!-- Nav -->
+  <nav class="bg-white border-b border-gray-200 sticky top-0 z-40" x-data="{ mobileOpen: false, userOpen: false }">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex justify-between h-14">
+        <!-- Logo + breadcrumb -->
+        <div class="flex items-center space-x-3">
+          <a href="/dashboard" class="flex items-center space-x-2 text-amber-700 font-bold text-lg hover:text-amber-600">
+            <span>🏡</span><span>Familyer</span>
+          </a>
+          {% block breadcrumb %}{% endblock %}
+        </div>
+        <!-- Right side -->
+        <div class="flex items-center space-x-2">
+          <!-- Theme toggle -->
+          <button id="theme-toggle" onclick="cycleTheme()" title="Toggle theme"
+                  class="p-1.5 rounded-lg text-gray-500 hover:text-amber-600 hover:bg-gray-50 transition-colors text-base leading-none">
+            💻
+          </button>
+          <!-- Notification bell -->
+          <a href="/notifications" class="relative text-gray-500 hover:text-amber-600 p-1.5">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6 6 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
+            </svg>
+            {% if unread_count > 0 %}
+            <span class="absolute -top-0.5 -right-0.5 bg-red-500 text-white text-xs rounded-full h-4 w-4 flex items-center justify-center leading-none">
+              {{ unread_count }}
+            </span>
+            {% endif %}
+          </a>
+          <!-- User menu -->
+          <div class="relative" x-data="{ open: false }">
+            <button @click="open = !open" class="flex items-center space-x-1 text-sm font-medium text-gray-700 hover:text-amber-600 focus:outline-none p-1.5">
+              <span class="hidden sm:block">{{ user_name }}</span>
+              <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"/>
+              </svg>
+            </button>
+            <div x-show="open" @click.away="open = false" x-cloak
+                 class="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-100 py-1 z-50">
+              <a href="/profile" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">Profile</a>
+              {% if is_sysadmin %}
+              <a href="/admin" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">Admin Panel</a>
+              {% endif %}
+              <hr class="my-1 border-gray-100">
+              <form action="/api/auth/logout" method="post">
+                <button type="submit" class="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50">
+                  Sign out
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Flash message -->
+  {% if let Some(f) = flash %}
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4">
+    <div class="px-4 py-3 rounded-lg border text-sm
+      {% if f.kind == "error" %}bg-red-50 border-red-200 text-red-700
+      {% else if f.kind == "success" %}bg-green-50 border-green-200 text-green-700
+      {% else %}bg-blue-50 border-blue-200 text-blue-700{% endif %}">
+      {{ f.text }}
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Main content -->
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+    {% block content %}{% endblock %}
+  </main>
+
+  <script src="/assets/app.js"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>
