@@ -17,7 +17,7 @@ use crate::{
     state::AppState,
 };
 
-use super::helpers::{ensure_ra, load_reunion};
+use super::helpers::{ensure_ra, load_reunion, user_is_ra};
 
 // ── Response types ─────────────────────────────────────────────────────────────
 
@@ -41,7 +41,7 @@ pub async fn list_locations(
     Path(reunion_id): Path<Uuid>,
 ) -> AppResult<impl IntoResponse> {
     let reunion = load_reunion(&state, reunion_id).await?;
-    let is_ra = user.is_ra_for(reunion.responsible_admin_id);
+    let is_ra = user_is_ra(&state, &user, reunion_id).await;
     let show_aggregate = is_ra || reunion.location_votes_revealed;
 
     let candidates = LocationCandidate::list_for_reunion(state.db(), reunion_id).await?;
@@ -91,16 +91,11 @@ pub async fn create_location(
     Path(reunion_id): Path<Uuid>,
     Json(body): Json<NewLocationCandidate>,
 ) -> AppResult<impl IntoResponse> {
-    let reunion = load_reunion(&state, reunion_id).await?;
-    ensure_ra(&user, &reunion)?;
+    load_reunion(&state, reunion_id).await?;
+    ensure_ra(&user, &state, reunion_id).await?;
 
-    if reunion.phase != Phase::Locations {
-        return Err(AppError::WrongPhase {
-            required: Phase::Locations.label().into(),
-            current: reunion.phase.label().into(),
-        });
-    }
-
+    // No phase gate — RA can add locations at any time (e.g. when dates are
+    // set out-of-band and they want to move directly to location selection).
     let candidate =
         LocationCandidate::create(state.db(), reunion_id, user.id, body).await?;
     Ok((StatusCode::CREATED, Json(candidate)))
@@ -113,8 +108,8 @@ pub async fn delete_location(
     State(state): State<AppState>,
     Path((reunion_id, loc_id)): Path<(Uuid, Uuid)>,
 ) -> AppResult<impl IntoResponse> {
-    let reunion = load_reunion(&state, reunion_id).await?;
-    ensure_ra(&user, &reunion)?;
+    load_reunion(&state, reunion_id).await?;
+    ensure_ra(&user, &state, reunion_id).await?;
 
     // Verify the candidate belongs to this reunion
     let candidate = LocationCandidate::find_by_id(state.db(), loc_id).await?;
@@ -142,10 +137,18 @@ pub async fn vote_location(
     Json(body): Json<VoteRequest>,
 ) -> AppResult<impl IntoResponse> {
     let reunion = load_reunion(&state, reunion_id).await?;
+    let is_ra = user_is_ra(&state, &user, reunion_id).await;
 
-    if reunion.phase != Phase::Locations {
+    // Phase gate: members can vote once location candidates exist — from the
+    // Availability phase onward (parallel with the dates poll).  The RA can
+    // always vote.  Read-only phases (PostReunion, Archived) are excluded.
+    let voting_open = matches!(
+        reunion.phase,
+        Phase::Availability | Phase::Locations | Phase::PrepCompleted | Phase::Active
+    );
+    if !is_ra && !voting_open {
         return Err(AppError::WrongPhase {
-            required: Phase::Locations.label().into(),
+            required: "Availability or later".into(),
             current: reunion.phase.label().into(),
         });
     }
@@ -183,11 +186,12 @@ pub async fn reveal_votes(
     Path(reunion_id): Path<Uuid>,
 ) -> AppResult<impl IntoResponse> {
     let reunion = load_reunion(&state, reunion_id).await?;
-    ensure_ra(&user, &reunion)?;
+    ensure_ra(&user, &state, reunion_id).await?;
 
-    if !matches!(reunion.phase, Phase::Locations | Phase::LocationSelected) {
+    // Votes can be revealed any time from Availability onward (excluding archive/post-reunion).
+    if matches!(reunion.phase, Phase::Draft | Phase::PostReunion | Phase::Archived) {
         return Err(AppError::BadRequest(
-            "votes can only be revealed during the locations or location_selected phase".into(),
+            "votes can only be revealed while the reunion is in an active planning phase".into(),
         ));
     }
 
@@ -202,16 +206,10 @@ pub async fn select_location(
     State(state): State<AppState>,
     Path((reunion_id, loc_id)): Path<(Uuid, Uuid)>,
 ) -> AppResult<impl IntoResponse> {
-    let reunion = load_reunion(&state, reunion_id).await?;
-    ensure_ra(&user, &reunion)?;
+    load_reunion(&state, reunion_id).await?;
+    ensure_ra(&user, &state, reunion_id).await?;
 
-    if reunion.phase != Phase::Locations {
-        return Err(AppError::WrongPhase {
-            required: Phase::Locations.label().into(),
-            current: reunion.phase.label().into(),
-        });
-    }
-
+    // No phase gate — RA can select a winner at any time.
     // Verify candidate belongs to this reunion
     let candidate = LocationCandidate::find_by_id(state.db(), loc_id).await?;
     if candidate.reunion_id != reunion_id {

@@ -1,12 +1,12 @@
-use axum::Router;
+use axum::{extract::DefaultBodyLimit, Router};
 use std::net::SocketAddr;
 use time::Duration;
 use tokio::net::TcpListener;
-use tower_sessions::{Expiry, SessionManagerLayer};
+use tower_sessions::{cookie::SameSite, Expiry, SessionManagerLayer};
 use tower_sessions_sqlx_store::PostgresStore;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-use familyer::{
+use clanplan::{
     auth::{email::Mailer, google, password as pwd},
     config::Config,
     db,
@@ -21,7 +21,7 @@ async fn main() -> anyhow::Result<()> {
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "familyer=debug,tower_http=debug".into()),
+                .unwrap_or_else(|_| "clanplan=debug,tower_http=debug".into()),
         )
         .with(tracing_subscriber::fmt::layer())
         .init();
@@ -39,7 +39,8 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("session store ready");
 
     let session_layer = SessionManagerLayer::new(session_store)
-        .with_expiry(Expiry::OnInactivity(Duration::days(7)));
+        .with_expiry(Expiry::OnInactivity(Duration::days(7)))
+        .with_same_site(SameSite::Lax);
 
     // Email transport
     let mailer = Mailer::new(&config)?;
@@ -98,9 +99,14 @@ async fn main() -> anyhow::Result<()> {
         .merge(admin_router())
         .nest("/reunions", reunions_router());
 
+    // Raise the body limit so multipart file uploads work.
+    // Axum's hard default is 2 MB; our app-level check in media.rs is the real enforcer.
+    let body_limit = DefaultBodyLimit::max(config.max_upload_bytes as usize);
+
     let app = Router::new()
         .nest("/api", api)
         .merge(pages_router())
+        .layer(body_limit)
         .layer(session_layer)
         .with_state(state);
 

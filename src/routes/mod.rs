@@ -35,9 +35,6 @@ pub fn auth_router() -> Router<AppState> {
 pub fn me_router() -> Router<AppState> {
     Router::new()
         .route("/me",                              get(auth::get_me).patch(auth::update_me))
-        .route("/me/notifications",                get(announcements::list_notifications))
-        .route("/me/notifications/read-all",       post(announcements::mark_all_notifications_read))
-        .route("/me/notifications/:notif_id/read", post(announcements::mark_notification_read))
 }
 
 pub fn admin_router() -> Router<AppState> {
@@ -60,9 +57,19 @@ pub fn reunions_router() -> Router<AppState> {
     Router::new()
         // ── Reunion CRUD + phase control ─────────────────────────────────────
         .route("/",                        get(reunions::list_reunions).post(reunions::create_reunion))
-        .route("/:id",                     get(reunions::get_reunion).patch(reunions::update_reunion))
+        .route("/:id",                     get(reunions::get_reunion).patch(reunions::update_reunion)
+                                              .delete(reunions::delete_reunion))
         .route("/:id/advance-phase",       post(reunions::advance_phase))
+        .route("/:id/retreat-phase",       post(reunions::retreat_phase))
         .route("/:id/dates",               post(reunions::set_dates))
+        .route("/:id/my-completion",       get(reunions::my_completion))
+        .route("/:id/setup-progress",      get(reunions::setup_progress))
+        .route("/:id/family-units",        get(reunions::list_reunion_family_units))
+        .route("/:id/family-units/:fu_id", put(reunions::add_reunion_family_unit)
+                                              .delete(reunions::remove_reunion_family_unit))
+        .route("/:id/admins/:user_id",     put(reunions::add_reunion_admin)
+                                              .delete(reunions::remove_reunion_admin))
+        .route("/:id/unarchive",           post(reunions::unarchive))
         // ── Availability ──────────────────────────────────────────────────────
         .route("/:id/availability/me",     get(availability::get_my_availability)
                                               .put(availability::set_my_availability))
@@ -94,7 +101,10 @@ pub fn reunions_router() -> Router<AppState> {
         // ── Activity ideas ────────────────────────────────────────────────────
         .route("/:id/activities",          get(activities::list_activities)
                                               .post(activities::create_activity))
+        .route("/:id/activities/:act_id",          delete(activities::delete_activity))
         .route("/:id/activities/:act_id/vote",    put(activities::vote_activity))
+        .route("/:id/activities/:act_id/rsvp",    put(activities::rsvp_activity)
+                                                     .delete(activities::unrsvp_activity))
         .route("/:id/activities/:act_id/comments",
                                            get(activities::list_comments)
                                               .post(activities::create_comment))
@@ -110,15 +120,20 @@ pub fn reunions_router() -> Router<AppState> {
         .route("/:id/expenses",            get(expenses::list_expenses).post(expenses::create_expense))
         .route("/:id/expenses/balances",   get(expenses::get_balances))
         .route("/:id/expenses/balances.csv", get(expenses::get_balances_csv))
+        .route("/:id/expenses/confirm",    post(expenses::confirm_expenses)
+                                              .delete(expenses::unconfirm_expenses))
         .route("/:id/expenses/:exp_id",    delete(expenses::delete_expense))
-        // ── Live feedback + post-reunion survey ───────────────────────────────
+        // ── Live feedback + survey ────────────────────────────────────────────
         .route("/:id/feedback",            get(feedback::list_feedback).post(feedback::create_feedback))
         .route("/:id/survey/questions",    get(feedback::list_survey_questions)
                                               .post(feedback::create_survey_question))
         .route("/:id/survey/questions/:q_id",
                                            delete(feedback::delete_survey_question))
-        .route("/:id/survey/questions/:q_id/response",
-                                           put(feedback::upsert_survey_response))
+        .route("/:id/survey/questions/:q_id/responses",
+                                           post(feedback::create_survey_response))
+        .route("/:id/survey/questions/:q_id/responses/:r_id",
+                                           patch(feedback::update_survey_response)
+                                          .delete(feedback::delete_survey_response))
         .route("/:id/survey/responses",    get(feedback::list_survey_responses))
         // ── Announcements ─────────────────────────────────────────────────────
         .route("/:id/announcements",       get(announcements::list_announcements)
@@ -154,4 +169,17 @@ pub fn pages_router() -> Router<AppState> {
         .route("/reunions/:id/expenses",            get(pages::expenses_page))
         .route("/reunions/:id/survey",              get(pages::survey_page))
         .route("/reunions/:id/announcements",       get(pages::announcements_page))
+        .route("/reunions/:id/settings",            get(pages::settings_page))
+        // Slug-based aliases: /r/:slug/... mirrors /reunions/:id/...
+        .route("/r/:slug",                          get(pages::reunion_overview))
+        .route("/r/:slug/availability",             get(pages::availability_page))
+        .route("/r/:slug/locations",                get(pages::locations_page))
+        .route("/r/:slug/schedule",                 get(pages::schedule_page))
+        .route("/r/:slug/today",                    get(pages::today_page))
+        .route("/r/:slug/activities",               get(pages::activities_page))
+        .route("/r/:slug/media",                    get(pages::media_page))
+        .route("/r/:slug/expenses",                 get(pages::expenses_page))
+        .route("/r/:slug/survey",                   get(pages::survey_page))
+        .route("/r/:slug/announcements",            get(pages::announcements_page))
+        .route("/r/:slug/settings",                 get(pages::settings_page))
 }

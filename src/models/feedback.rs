@@ -135,8 +135,19 @@ impl SurveyQuestion {
     }
 }
 
+/// Survey response enriched with the respondent's display name (RA view).
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct SurveyResponseWithName {
+    pub survey_question_id: Uuid,
+    pub user_id: Uuid,
+    pub display_name: String,
+    pub response_text: String,
+    pub created_at: DateTime<Utc>,
+}
+
 impl SurveyResponse {
-    pub async fn upsert(
+    /// Append a new response for this user (multiple allowed per question).
+    pub async fn create(
         pool: &PgPool,
         question_id: Uuid,
         user_id: Uuid,
@@ -145,8 +156,6 @@ impl SurveyResponse {
         Ok(sqlx::query_as::<_, SurveyResponse>(
             r#"INSERT INTO survey_responses (survey_question_id, user_id, response_text)
                VALUES ($1, $2, $3)
-               ON CONFLICT (survey_question_id, user_id) DO UPDATE
-               SET response_text = EXCLUDED.response_text
                RETURNING *"#,
         )
         .bind(question_id)
@@ -154,6 +163,60 @@ impl SurveyResponse {
         .bind(response_text)
         .fetch_one(pool)
         .await?)
+    }
+
+    /// The current user's own responses for all questions in a reunion.
+    pub async fn list_for_user(
+        pool: &PgPool,
+        reunion_id: Uuid,
+        user_id: Uuid,
+    ) -> AppResult<Vec<SurveyResponse>> {
+        Ok(sqlx::query_as::<_, SurveyResponse>(
+            r#"SELECT sr.* FROM survey_responses sr
+               JOIN survey_questions sq ON sq.id = sr.survey_question_id
+               WHERE sq.reunion_id = $1 AND sr.user_id = $2
+               ORDER BY sr.created_at"#,
+        )
+        .bind(reunion_id)
+        .bind(user_id)
+        .fetch_all(pool)
+        .await?)
+    }
+
+    /// Edit the text of a response — only succeeds if the caller owns it.
+    pub async fn update(
+        pool: &PgPool,
+        response_id: Uuid,
+        user_id: Uuid,
+        response_text: &str,
+    ) -> AppResult<Option<SurveyResponse>> {
+        Ok(sqlx::query_as::<_, SurveyResponse>(
+            r#"UPDATE survey_responses
+               SET response_text = $1
+               WHERE id = $2 AND user_id = $3
+               RETURNING *"#,
+        )
+        .bind(response_text)
+        .bind(response_id)
+        .bind(user_id)
+        .fetch_optional(pool)
+        .await?)
+    }
+
+    /// Delete a response — only succeeds if the caller owns it.
+    pub async fn delete(
+        pool: &PgPool,
+        response_id: Uuid,
+        user_id: Uuid,
+    ) -> AppResult<bool> {
+        let result = sqlx::query(
+            "DELETE FROM survey_responses WHERE id = $1 AND user_id = $2",
+        )
+        .bind(response_id)
+        .bind(user_id)
+        .execute(pool)
+        .await?;
+        Ok(result.rows_affected() > 0)
     }
 
     /// All responses for a reunion — visible to RA/sysadmin only.
@@ -164,6 +227,25 @@ impl SurveyResponse {
         Ok(sqlx::query_as::<_, SurveyResponse>(
             r#"SELECT sr.* FROM survey_responses sr
                JOIN survey_questions sq ON sq.id = sr.survey_question_id
+               WHERE sq.reunion_id = $1
+               ORDER BY sq.order_index, sr.created_at"#,
+        )
+        .bind(reunion_id)
+        .fetch_all(pool)
+        .await?)
+    }
+
+    /// All responses enriched with respondent names (RA view).
+    pub async fn list_for_reunion_with_names(
+        pool: &PgPool,
+        reunion_id: Uuid,
+    ) -> AppResult<Vec<SurveyResponseWithName>> {
+        Ok(sqlx::query_as::<_, SurveyResponseWithName>(
+            r#"SELECT sr.survey_question_id, sr.user_id, u.display_name,
+                      sr.response_text, sr.created_at
+               FROM survey_responses sr
+               JOIN survey_questions sq ON sq.id = sr.survey_question_id
+               JOIN users u ON u.id = sr.user_id
                WHERE sq.reunion_id = $1
                ORDER BY sq.order_index, sr.created_at"#,
         )

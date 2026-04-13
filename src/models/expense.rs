@@ -1,4 +1,4 @@
-use chrono::{DateTime, NaiveDate, Utc};
+use chrono::{DateTime, Local, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -33,8 +33,10 @@ pub struct NewExpense {
     pub description: String,
     /// In cents.
     pub amount_cents: i32,
-    pub expense_date: NaiveDate,
-    /// Who is splitting this expense. If empty, defaults to all reunion members.
+    /// Defaults to today if omitted.
+    pub expense_date: Option<NaiveDate>,
+    /// Who is splitting this expense. If empty, defaults to all reunion members —
+    /// but the caller should pass all member IDs; the empty check is a fallback guard.
     pub split_among: Vec<Uuid>,
 }
 
@@ -82,9 +84,10 @@ impl Expense {
             return Err(AppError::BadRequest("amount must be greater than zero".into()));
         }
         if new.split_among.is_empty() {
-            return Err(AppError::BadRequest("split_among must not be empty".into()));
+            return Err(AppError::BadRequest("split_among must not be empty — pass all member IDs".into()));
         }
 
+        let expense_date = new.expense_date.unwrap_or_else(|| Local::now().date_naive());
         let splits = calculate_even_split(new.amount_cents, &new.split_among);
 
         let mut tx = pool.begin().await?;
@@ -100,7 +103,7 @@ impl Expense {
         .bind(new.paid_by_user_id)
         .bind(&new.description)
         .bind(new.amount_cents)
-        .bind(new.expense_date)
+        .bind(expense_date)
         .fetch_one(&mut *tx)
         .await?;
 

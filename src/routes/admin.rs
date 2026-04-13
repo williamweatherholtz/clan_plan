@@ -37,9 +37,21 @@ pub struct UpdateUserRequest {
     pub role: Option<UserRole>,
     /// Deactivate (true) or reactivate (false) the account.
     pub deactivated: Option<bool>,
-    /// Assign the user to a family unit. Provide a UUID to assign,
-    /// but note this cannot clear the assignment — use a separate call for that.
-    pub family_unit_id: Option<Uuid>,
+    /// Assign or clear family unit.
+    /// - key absent / not provided → don't touch it
+    /// - `"family_unit_id": null`  → clear (set to NULL in DB)
+    /// - `"family_unit_id": "uuid"` → assign to that unit
+    #[serde(default, deserialize_with = "deserialize_optional_uuid")]
+    pub family_unit_id: Option<Option<Uuid>>,
+}
+
+/// Distinguishes a missing JSON key (outer None) from an explicit `null`
+/// (Some(None)) vs an actual UUID value (Some(Some(uuid))).
+fn deserialize_optional_uuid<'de, D>(d: D) -> Result<Option<Option<Uuid>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Ok(Some(Option::<Uuid>::deserialize(d)?))
 }
 
 pub async fn update_user(
@@ -57,8 +69,9 @@ pub async fn update_user(
     if let Some(deactivated) = body.deactivated {
         User::set_deactivated(state.db(), user_id, deactivated).await?;
     }
-    if let Some(family_unit_id) = body.family_unit_id {
-        User::set_family_unit(state.db(), user_id, Some(family_unit_id)).await?;
+    // Some(inner) means the key was present; inner is the desired value (None = clear)
+    if let Some(inner) = body.family_unit_id {
+        User::set_family_unit(state.db(), user_id, inner).await?;
     }
 
     let updated = User::find_by_id(state.db(), user_id).await?;

@@ -19,7 +19,7 @@ use crate::{
     state::AppState,
 };
 
-use super::helpers::load_reunion;
+use super::helpers::{load_reunion, user_is_ra};
 
 // ── POST /reunions/:id/media ──────────────────────────────────────────────────
 
@@ -150,14 +150,14 @@ pub async fn delete_media(
     State(state): State<AppState>,
     Path((reunion_id, media_id)): Path<(Uuid, Uuid)>,
 ) -> AppResult<StatusCode> {
-    let reunion = load_reunion(&state, reunion_id).await?;
+    load_reunion(&state, reunion_id).await?;
     let media = Media::find_by_id(state.db(), media_id).await?;
     if media.reunion_id != reunion_id {
         return Err(AppError::NotFound);
     }
 
     let is_uploader = media.uploaded_by == user.id;
-    let is_admin = user.is_ra_for(reunion.responsible_admin_id) || user.is_sysadmin();
+    let is_admin = user_is_ra(&state, &user, reunion_id).await;
 
     if !is_uploader && !is_admin {
         return Err(AppError::Forbidden);

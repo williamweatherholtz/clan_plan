@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::error::{AppError, AppResult};
+use crate::error::AppResult;
 
 // ── Announcements ──────────────────────────────────────────────────────────────
 
@@ -65,81 +65,3 @@ impl Announcement {
     }
 }
 
-// ── Notifications ──────────────────────────────────────────────────────────────
-
-#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
-pub struct Notification {
-    pub id: Uuid,
-    pub user_id: Uuid,
-    pub content: String,
-    pub link: Option<String>,
-    pub read_at: Option<DateTime<Utc>>,
-    pub created_at: DateTime<Utc>,
-}
-
-impl Notification {
-    pub async fn create(
-        pool: &PgPool,
-        user_id: Uuid,
-        content: &str,
-        link: Option<&str>,
-    ) -> AppResult<Notification> {
-        Ok(sqlx::query_as::<_, Notification>(
-            r#"INSERT INTO notifications (user_id, content, link)
-               VALUES ($1, $2, $3)
-               RETURNING *"#,
-        )
-        .bind(user_id)
-        .bind(content)
-        .bind(link)
-        .fetch_one(pool)
-        .await?)
-    }
-
-    /// Unread notifications for a user, newest first.
-    pub async fn list_unread(pool: &PgPool, user_id: Uuid) -> AppResult<Vec<Notification>> {
-        Ok(sqlx::query_as::<_, Notification>(
-            "SELECT * FROM notifications WHERE user_id = $1 AND read_at IS NULL ORDER BY created_at DESC",
-        )
-        .bind(user_id)
-        .fetch_all(pool)
-        .await?)
-    }
-
-    pub async fn unread_count(pool: &PgPool, user_id: Uuid) -> AppResult<i64> {
-        let row = sqlx::query_as::<_, (i64,)>(
-            "SELECT COUNT(*) FROM notifications WHERE user_id = $1 AND read_at IS NULL",
-        )
-        .bind(user_id)
-        .fetch_one(pool)
-        .await?;
-        Ok(row.0)
-    }
-
-    pub async fn mark_read(pool: &PgPool, id: Uuid, user_id: Uuid) -> AppResult<()> {
-        let n = sqlx::query(
-            "UPDATE notifications SET read_at = NOW()
-             WHERE id = $1 AND user_id = $2 AND read_at IS NULL",
-        )
-        .bind(id)
-        .bind(user_id)
-        .execute(pool)
-        .await?
-        .rows_affected();
-        if n == 0 {
-            return Err(AppError::NotFound);
-        }
-        Ok(())
-    }
-
-    pub async fn mark_all_read(pool: &PgPool, user_id: Uuid) -> AppResult<u64> {
-        let n = sqlx::query(
-            "UPDATE notifications SET read_at = NOW() WHERE user_id = $1 AND read_at IS NULL",
-        )
-        .bind(user_id)
-        .execute(pool)
-        .await?
-        .rows_affected();
-        Ok(n)
-    }
-}

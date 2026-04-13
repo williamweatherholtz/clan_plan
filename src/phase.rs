@@ -10,16 +10,12 @@ use serde::{Deserialize, Serialize};
 pub enum Phase {
     /// RA is setting up the reunion record; not yet visible to members.
     Draft,
-    /// Members mark which days work for them.
+    /// Members mark which days work for them; RA sets the date range.
     Availability,
-    /// RA has reviewed the heatmap and locked in the date range.
-    DateSelected,
-    /// RA has added location candidates; members vote (blind until revealed).
+    /// RA has added location candidates; members vote.
     Locations,
-    /// RA has picked the location.
-    LocationSelected,
-    /// RA is building the daily schedule blocks.
-    Schedule,
+    /// RA has finished prep; the reunion auto-activates when the start date arrives.
+    PrepCompleted,
     /// The reunion is happening; full access — today-view, signups, media, expenses.
     Active,
     /// Reunion is over; post-event survey is open; read-mostly.
@@ -33,11 +29,9 @@ impl Phase {
     pub fn next(&self) -> Option<Phase> {
         match self {
             Phase::Draft => Some(Phase::Availability),
-            Phase::Availability => Some(Phase::DateSelected),
-            Phase::DateSelected => Some(Phase::Locations),
-            Phase::Locations => Some(Phase::LocationSelected),
-            Phase::LocationSelected => Some(Phase::Schedule),
-            Phase::Schedule => Some(Phase::Active),
+            Phase::Availability => Some(Phase::Locations),
+            Phase::Locations => Some(Phase::PrepCompleted),
+            Phase::PrepCompleted => Some(Phase::Active),
             Phase::Active => Some(Phase::PostReunion),
             Phase::PostReunion => Some(Phase::Archived),
             Phase::Archived => None,
@@ -48,6 +42,25 @@ impl Phase {
     pub fn advance(&self) -> AppResult<Phase> {
         self.next()
             .ok_or_else(|| AppError::BadRequest("reunion is already archived".into()))
+    }
+
+    /// Returns the previous phase in the sequence, or `None` if already Draft.
+    pub fn prev(&self) -> Option<Phase> {
+        match self {
+            Phase::Draft => None,
+            Phase::Availability => Some(Phase::Draft),
+            Phase::Locations => Some(Phase::Availability),
+            Phase::PrepCompleted => Some(Phase::Locations),
+            Phase::Active => Some(Phase::PrepCompleted),
+            Phase::PostReunion => Some(Phase::Active),
+            Phase::Archived => Some(Phase::PostReunion),
+        }
+    }
+
+    /// Retreat to the previous phase, or error if already Draft.
+    pub fn retreat(&self) -> AppResult<Phase> {
+        self.prev()
+            .ok_or_else(|| AppError::BadRequest("reunion is already in Draft phase".into()))
     }
 
     /// Whether a direct transition from `self` → `to` is valid.
@@ -61,10 +74,8 @@ impl Phase {
         match self {
             Phase::Draft => "Draft",
             Phase::Availability => "Collecting Availability",
-            Phase::DateSelected => "Dates Confirmed",
             Phase::Locations => "Voting on Locations",
-            Phase::LocationSelected => "Location Confirmed",
-            Phase::Schedule => "Building Schedule",
+            Phase::PrepCompleted => "Prep Completed",
             Phase::Active => "Reunion Active",
             Phase::PostReunion => "Post-Reunion",
             Phase::Archived => "Archived",
@@ -102,10 +113,8 @@ mod tests {
         vec![
             Phase::Draft,
             Phase::Availability,
-            Phase::DateSelected,
             Phase::Locations,
-            Phase::LocationSelected,
-            Phase::Schedule,
+            Phase::PrepCompleted,
             Phase::Active,
             Phase::PostReunion,
             Phase::Archived,
@@ -138,14 +147,13 @@ mod tests {
     fn cannot_skip_phases() {
         assert!(!Phase::Draft.can_advance_to(&Phase::Active));
         assert!(!Phase::Draft.can_advance_to(&Phase::Locations));
-        assert!(!Phase::Availability.can_advance_to(&Phase::Schedule));
-        assert!(!Phase::DateSelected.can_advance_to(&Phase::Active));
+        assert!(!Phase::Availability.can_advance_to(&Phase::PrepCompleted));
     }
 
     #[test]
     fn cannot_revert_phases() {
         assert!(!Phase::Active.can_advance_to(&Phase::Draft));
-        assert!(!Phase::Schedule.can_advance_to(&Phase::Availability));
+        assert!(!Phase::PrepCompleted.can_advance_to(&Phase::Availability));
         assert!(!Phase::PostReunion.can_advance_to(&Phase::Active));
     }
 

@@ -11,12 +11,13 @@ use crate::{
     auth::session::CurrentUser,
     error::{AppError, AppResult},
     models::activity::{
-        ActivityComment, ActivityIdea, ActivityStatus, ActivityVote, NewActivityIdea,
+        ActivityComment, ActivityIdea, ActivityStatus, ActivityVote,
+        NewActivityIdea,
     },
     state::AppState,
 };
 
-use super::helpers::{ensure_ra, load_reunion};
+use super::helpers::{ensure_ra, load_reunion, user_is_ra};
 
 // ── Response types ─────────────────────────────────────────────────────────────
 
@@ -152,8 +153,8 @@ pub async fn delete_comment(
     State(state): State<AppState>,
     Path((reunion_id, _act_id, cmt_id)): Path<(Uuid, Uuid, Uuid)>,
 ) -> AppResult<StatusCode> {
-    let reunion = load_reunion(&state, reunion_id).await?;
-    let is_admin = user.is_ra_for(reunion.responsible_admin_id);
+    load_reunion(&state, reunion_id).await?;
+    let is_admin = user_is_ra(&state, &user, reunion_id).await;
 
     ActivityComment::delete(state.db(), cmt_id, user.id, is_admin).await?;
     Ok(StatusCode::NO_CONTENT)
@@ -172,8 +173,8 @@ pub async fn set_status(
     Path((reunion_id, act_id)): Path<(Uuid, Uuid)>,
     Json(body): Json<SetStatusRequest>,
 ) -> AppResult<impl IntoResponse> {
-    let reunion = load_reunion(&state, reunion_id).await?;
-    ensure_ra(&user, &reunion)?;
+    load_reunion(&state, reunion_id).await?;
+    ensure_ra(&user, &state, reunion_id).await?;
 
     let idea = ActivityIdea::find_by_id(state.db(), act_id).await?;
     if idea.reunion_id != reunion_id {
@@ -198,8 +199,8 @@ pub async fn promote_activity(
     Path((reunion_id, act_id)): Path<(Uuid, Uuid)>,
     Json(body): Json<PromoteRequest>,
 ) -> AppResult<impl IntoResponse> {
-    let reunion = load_reunion(&state, reunion_id).await?;
-    ensure_ra(&user, &reunion)?;
+    load_reunion(&state, reunion_id).await?;
+    ensure_ra(&user, &state, reunion_id).await?;
 
     let idea = ActivityIdea::find_by_id(state.db(), act_id).await?;
     if idea.reunion_id != reunion_id {
@@ -221,6 +222,40 @@ pub async fn promote_activity(
     Ok(Json(updated))
 }
 
+// ── DELETE /reunions/:id/activities/:act_id ───────────────────────────────────
+// Allowed by the original proposer or any RA.
+// If the idea was promoted to a schedule block, that block is deleted too.
+
+pub async fn delete_activity(
+    user: CurrentUser,
+    State(state): State<AppState>,
+    Path((reunion_id, act_id)): Path<(Uuid, Uuid)>,
+) -> AppResult<StatusCode> {
+    load_reunion(&state, reunion_id).await?;
+    let is_admin = user_is_ra(&state, &user, reunion_id).await;
+
+    let idea = ActivityIdea::find_by_id(state.db(), act_id).await?;
+    if idea.reunion_id != reunion_id {
+        return Err(AppError::NotFound);
+    }
+
+    // Capture before deletion — the promoted block should go with the idea.
+    let promoted_block_id = idea.promoted_to_block_id;
+
+    ActivityIdea::delete(state.db(), act_id, user.id, is_admin).await?;
+
+    // If this idea was promoted to a schedule block, delete that block too.
+    // Schedule slots cascade automatically via the schedule_blocks FK.
+    if let Some(block_id) = promoted_block_id {
+        sqlx::query("DELETE FROM schedule_blocks WHERE id = $1")
+            .bind(block_id)
+            .execute(state.db())
+            .await?;
+    }
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
 // ── GET /reunions/:id/activities/:act_id/comments ─────────────────────────────
 
 pub async fn list_comments(
@@ -235,8 +270,50 @@ pub async fn list_comments(
         return Err(AppError::NotFound);
     }
 
-    let comments = ActivityComment::list_for_idea(state.db(), act_id).await?;
+    let comments = ActivityComment::list_with_names(state.db(), act_id).await?;
     Ok(Json(comments))
+}
+
+// ── PUT /reunions/:id/activities/:act_id/rsvp ─────────────────────────────────
+
+pub async fn rsvp_activity(
+    user: CurrentUser,
+    State(state): State<AppState>,
+    Path((reunion_id, act_id)): Path<(Uuid, Uuid)>,
+) -> AppResult<StatusCode> {
+    load_reunion(&state, reunion_id).await?;
+    let idea = ActivityIdea::find_by_id(state.db(), act_id).await?;
+    if idea.reunion_id != reunion_id {
+        return Err(AppError::NotFound);
+    }
+    sqlx::query(
+        "INSERT INTO activity_rsvps (activity_idea_id, user_id)
+         VALUES ($1, $2)
+         ON CONFLICT (activity_idea_id, user_id) DO NOTHING",
+    )
+    .bind(act_id)
+    .bind(user.id)
+    .execute(state.db())
+    .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+// ── DELETE /reunions/:id/activities/:act_id/rsvp ──────────────────────────────
+
+pub async fn unrsvp_activity(
+    user: CurrentUser,
+    State(state): State<AppState>,
+    Path((reunion_id, act_id)): Path<(Uuid, Uuid)>,
+) -> AppResult<StatusCode> {
+    load_reunion(&state, reunion_id).await?;
+    sqlx::query(
+        "DELETE FROM activity_rsvps WHERE activity_idea_id = $1 AND user_id = $2",
+    )
+    .bind(act_id)
+    .bind(user.id)
+    .execute(state.db())
+    .await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 // ── Internal helper ────────────────────────────────────────────────────────────

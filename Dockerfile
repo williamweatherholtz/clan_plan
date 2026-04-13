@@ -40,11 +40,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-COPY --from=builder /app/target/release/familyer ./familyer
+COPY --from=builder /app/target/release/clanplan ./clanplan
+COPY --from=builder /app/assets ./assets
+COPY --from=builder /app/migrations ./migrations
 
 # Media storage mount point — map a host volume here in compose
 RUN mkdir -p /data/media
 
 EXPOSE 8080
 
-CMD ["./familyer"]
+CMD ["./clanplan"]

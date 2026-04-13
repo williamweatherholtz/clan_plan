@@ -82,16 +82,8 @@ pub async fn create_block(
     Path(reunion_id): Path<Uuid>,
     Json(body): Json<NewScheduleBlock>,
 ) -> AppResult<impl IntoResponse> {
-    let reunion = load_reunion(&state, reunion_id).await?;
-    ensure_ra(&user, &reunion)?;
-
-    // Allow building/editing the schedule from schedule phase through active phase
-    if !matches!(reunion.phase, Phase::Schedule | Phase::Active) {
-        return Err(AppError::WrongPhase {
-            required: "schedule or active".into(),
-            current: reunion.phase.label().into(),
-        });
-    }
+    load_reunion(&state, reunion_id).await?;
+    ensure_ra(&user, &state, reunion_id).await?;
 
     if body.end_time <= body.start_time {
         return Err(AppError::BadRequest(
@@ -111,8 +103,8 @@ pub async fn update_block(
     Path((reunion_id, block_id)): Path<(Uuid, Uuid)>,
     Json(body): Json<NewScheduleBlock>,
 ) -> AppResult<impl IntoResponse> {
-    let reunion = load_reunion(&state, reunion_id).await?;
-    ensure_ra(&user, &reunion)?;
+    load_reunion(&state, reunion_id).await?;
+    ensure_ra(&user, &state, reunion_id).await?;
 
     let block = ScheduleBlock::find_by_id(state.db(), block_id).await?;
     if block.reunion_id != reunion_id {
@@ -156,8 +148,8 @@ pub async fn delete_block(
     State(state): State<AppState>,
     Path((reunion_id, block_id)): Path<(Uuid, Uuid)>,
 ) -> AppResult<StatusCode> {
-    let reunion = load_reunion(&state, reunion_id).await?;
-    ensure_ra(&user, &reunion)?;
+    load_reunion(&state, reunion_id).await?;
+    ensure_ra(&user, &state, reunion_id).await?;
 
     let block = ScheduleBlock::find_by_id(state.db(), block_id).await?;
     if block.reunion_id != reunion_id {
@@ -176,8 +168,8 @@ pub async fn create_slot(
     Path((reunion_id, block_id)): Path<(Uuid, Uuid)>,
     Json(body): Json<NewSignupSlot>,
 ) -> AppResult<impl IntoResponse> {
-    let reunion = load_reunion(&state, reunion_id).await?;
-    ensure_ra(&user, &reunion)?;
+    load_reunion(&state, reunion_id).await?;
+    ensure_ra(&user, &state, reunion_id).await?;
 
     let block = ScheduleBlock::find_by_id(state.db(), block_id).await?;
     if block.reunion_id != reunion_id {
@@ -209,7 +201,7 @@ pub async fn claim_slot(
     let reunion = load_reunion(&state, reunion_id).await?;
 
     // Members can sign up during active phase (and schedule phase for prep)
-    if !matches!(reunion.phase, Phase::Schedule | Phase::Active) {
+    if !matches!(reunion.phase, Phase::PrepCompleted | Phase::Active) {
         return Err(AppError::WrongPhase {
             required: "schedule or active".into(),
             current: reunion.phase.label().into(),
@@ -240,8 +232,8 @@ pub async fn admin_assign_slot(
     Path((reunion_id, block_id, slot_id)): Path<(uuid::Uuid, uuid::Uuid, uuid::Uuid)>,
     Json(body): Json<AdminAssignRequest>,
 ) -> AppResult<impl IntoResponse> {
-    let reunion = load_reunion(&state, reunion_id).await?;
-    ensure_ra(&user, &reunion)?;
+    load_reunion(&state, reunion_id).await?;
+    ensure_ra(&user, &state, reunion_id).await?;
 
     let block = ScheduleBlock::find_by_id(state.db(), block_id).await?;
     if block.reunion_id != reunion_id {
@@ -265,8 +257,8 @@ pub async fn admin_remove_signup(
         uuid::Uuid,
     )>,
 ) -> AppResult<StatusCode> {
-    let reunion = load_reunion(&state, reunion_id).await?;
-    ensure_ra(&user, &reunion)?;
+    load_reunion(&state, reunion_id).await?;
+    ensure_ra(&user, &state, reunion_id).await?;
 
     let block = ScheduleBlock::find_by_id(state.db(), block_id).await?;
     if block.reunion_id != reunion_id {
@@ -286,7 +278,7 @@ pub async fn release_slot(
 ) -> AppResult<StatusCode> {
     let reunion = load_reunion(&state, reunion_id).await?;
 
-    if !matches!(reunion.phase, Phase::Schedule | Phase::Active) {
+    if !matches!(reunion.phase, Phase::PrepCompleted | Phase::Active) {
         return Err(AppError::WrongPhase {
             required: "schedule or active".into(),
             current: reunion.phase.label().into(),

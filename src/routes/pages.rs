@@ -6,8 +6,9 @@
 
 use askama::Template;
 use axum::{
-    extract::{Path, Query, State},
-    http::{header, StatusCode},
+    async_trait,
+    extract::{FromRef, FromRequestParts, Path, Query, State},
+    http::{header, request::Parts, StatusCode},
     response::{IntoResponse, Redirect, Response},
     Form,
 };
@@ -25,20 +26,21 @@ use crate::{
     error::AppError,
     models::{
         activity::{ActivityIdea, ActivitySummary},
-        announcement::{Announcement, Notification},
+        announcement::Announcement,
         availability::Availability,
         expense::Expense,
-        feedback::SurveyQuestion,
-        host_rotation::HostRotation,
-        location::LocationCandidate,
+        feedback::{SurveyQuestion, SurveyResponse},
+        reunion::{Reunion, ReunionAdmin, ReunionDate, ReunionFamilyUnit},
+        location::{LocationCandidate, VoteWithName},
         media::Media,
-        reunion::{Reunion, ReunionDate},
         schedule::{ScheduleBlock, Signup},
         user::{FamilyUnit, User},
     },
     phase::Phase,
     state::AppState,
 };
+
+use super::helpers;
 
 // ── Embedded static assets ────────────────────────────────────────────────────
 
@@ -114,32 +116,87 @@ async fn require_sysadmin(session: &Session, state: &AppState) -> Result<User, R
     Ok(user)
 }
 
+// ── Slug-or-UUID path extractor ──────────────────────────────────────────────
+//
+// Handles both `/reunions/:id/...` (direct UUID) and `/r/:slug/...` (slug →
+// DB lookup) so every page handler can serve both URL shapes without change.
+
+pub struct SlugOrId(pub Uuid);
+
+#[async_trait]
+impl<S> FromRequestParts<S> for SlugOrId
+where
+    S: Send + Sync,
+    AppState: FromRef<S>,
+{
+    type Rejection = Response;
+
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+        use std::collections::HashMap;
+        let app_state = AppState::from_ref(state);
+        let map = Path::<HashMap<String, String>>::from_request_parts(parts, state)
+            .await
+            .map(|p| p.0)
+            .unwrap_or_default();
+
+        // /reunions/:id/... — direct UUID
+        if let Some(id_str) = map.get("id") {
+            if let Ok(id) = id_str.parse::<Uuid>() {
+                return Ok(SlugOrId(id));
+            }
+        }
+        // /r/:slug/... — slug lookup
+        if let Some(slug) = map.get("slug") {
+            if let Ok(r) = Reunion::find_by_slug(app_state.db(), slug).await {
+                return Ok(SlugOrId(r.id));
+            }
+        }
+        Err(Redirect::to("/dashboard").into_response())
+    }
+}
+
 // ── Reunion tab helper ────────────────────────────────────────────────────────
 
 pub struct NavTab {
     pub path: String,
     pub label: &'static str,
     pub active: bool,
+    /// 0 = top-level, 1 = planning/prep, 2 = during-reunion
+    pub group: u8,
+    /// True when the active tab belongs to this tab's group (highlights the dropdown button).
+    pub group_has_active: bool,
 }
 
+/// Build the reunion sub-navigation.
+/// `active_path` should match the tab's `path` field (e.g. `"activities"`).
 fn reunion_tabs(_reunion_id: Uuid, active_path: &str) -> Vec<NavTab> {
-    let tabs: &[(&str, &str)] = &[
-        ("", "Overview"),
-        ("availability", "Availability"),
-        ("locations", "Locations"),
-        ("schedule", "Schedule"),
-        ("today", "Today"),
-        ("activities", "Activities"),
-        ("media", "Photos"),
-        ("expenses", "Expenses"),
-        ("survey", "Survey"),
-        ("announcements", "Announcements"),
+    // (path, label, group)
+    let defs: &[(&str, &str, u8)] = &[
+        ("",              "Overview",      0),
+        ("settings",      "Settings",      0),
+        // Planning / prep
+        ("availability",  "Availability",  1),
+        ("locations",     "Locations",     1),
+        ("expenses",      "Expenses",      1),
+        ("survey",        "Survey",        1),
+        // During / always-on
+        ("today",         "Today",         2),
+        ("activities",    "Activities",    2),
+        ("schedule",      "Schedule",      2),
+        ("media",         "Photos",        2),
+        ("announcements", "Announcements", 2),
     ];
-    tabs.iter()
-        .map(|(path, label)| NavTab {
+    // Which group does the active tab belong to?
+    let active_group = defs.iter()
+        .find(|(path, _, _)| *path == active_path)
+        .map(|(_, _, g)| *g);
+    defs.iter()
+        .map(|(path, label, group)| NavTab {
             path: path.to_string(),
             label,
             active: *path == active_path,
+            group: *group,
+            group_has_active: active_group == Some(*group),
         })
         .collect()
 }
@@ -234,6 +291,10 @@ pub struct LocationPageView {
     pub avg_score_str: String,
     pub vote_count: i64,
     pub my_vote_score: Option<i16>,
+    pub my_vote_comment: Option<String>,
+    /// Non-empty only when the requesting user is an RA.
+    pub ra_votes: Vec<VoteWithName>,
+    pub selected: bool,
 }
 
 // ── Activity view type ────────────────────────────────────────────────────────
@@ -244,6 +305,14 @@ pub struct ActivityPageView {
     pub vote_count: i64,
     pub comment_count: i64,
     pub my_vote: Option<i16>,
+    pub rsvp_count: i64,
+    pub my_rsvp: bool,
+    /// Comma-separated display names of all members who marked "I'm in".
+    pub rsvp_names_str: String,
+    pub proposed_by_name: String,
+    pub proposed_by_family: Option<String>,
+    /// True when the logged-in user originally proposed this idea.
+    pub is_own_idea: bool,
 }
 
 // ── Expense view type ─────────────────────────────────────────────────────────
@@ -262,18 +331,33 @@ pub struct BalanceView {
 
 // ── Survey question view ──────────────────────────────────────────────────────
 
-pub struct SurveyQuestionView {
-    pub question: SurveyQuestion,
-    pub my_response: String,
+/// One of the current user's own responses — shown with edit/delete controls.
+pub struct MyResponseView {
+    pub id: Uuid,
+    pub response_text: String,
 }
 
-// ── Host rotation view ────────────────────────────────────────────────────────
+/// One response as seen by the RA (includes respondent name, no edit controls).
+pub struct SurveyResponseView {
+    pub display_name: String,
+    pub response_text: String,
+}
 
-pub struct HostRotationView {
+pub struct SurveyQuestionView {
+    pub question: SurveyQuestion,
+    /// The current user's own responses (may be multiple).
+    pub my_responses: Vec<MyResponseView>,
+    /// All responses with names — populated only for RA.
+    pub all_responses: Vec<SurveyResponseView>,
+}
+
+// ── RA user view ──────────────────────────────────────────────────────────────
+
+pub struct UserWithRaStatus {
     pub id: Uuid,
-    pub family_unit_name: String,
-    pub is_next: bool,
-    pub reunion_year: Option<String>,
+    pub display_name: String,
+    pub email: String,
+    pub is_ra: bool,
 }
 
 // ── Storage stats view ────────────────────────────────────────────────────────
@@ -318,14 +402,23 @@ struct ResetPasswordPage {
     token: String,
 }
 
+pub struct ReunionCardView {
+    pub id: Uuid,
+    pub title: String,
+    pub phase_label: String,
+    pub description: Option<String>,
+    pub slug: Option<String>,
+    pub ra_names: String,
+}
+
 #[derive(Template)]
 #[template(path = "pages/dashboard.html")]
 struct DashboardPage {
     user_name: String,
     is_sysadmin: bool,
-    unread_count: i64,
     flash: Option<FlashMsg>,
-    reunions: Vec<Reunion>,
+    reunions: Vec<ReunionCardView>,
+    has_archived: bool,
 }
 
 #[derive(Template)]
@@ -333,7 +426,6 @@ struct DashboardPage {
 struct ProfilePage {
     user_name: String,
     is_sysadmin: bool,
-    unread_count: i64,
     flash: Option<FlashMsg>,
     email: String,
     display_name: String,
@@ -345,13 +437,45 @@ struct ProfilePage {
 struct ReunionOverviewPage {
     user_name: String,
     is_sysadmin: bool,
-    unread_count: i64,
     flash: Option<FlashMsg>,
     reunion: Reunion,
     reunion_date: Option<ReunionDate>,
     is_ra: bool,
     tabs: Vec<NavTab>,
+    tab_label: &'static str,
     announcements: Vec<Announcement>,
+    /// How many distinct members have submitted availability for this reunion.
+    avail_response_count: i64,
+    /// Total active+verified members (denominator for progress fractions).
+    member_count: i64,
+    /// Number of location candidates added so far.
+    location_count: i64,
+    /// Slug-aware base URL for this reunion (e.g. "/r/slug" or "/reunions/uuid").
+    base_url: String,
+    /// Comma-separated RA display names (empty string if none).
+    ra_names: String,
+}
+
+pub struct FamilyUnitWithEnrolled {
+    pub id: Uuid,
+    pub name: String,
+    pub enrolled: bool,
+}
+
+#[derive(Template)]
+#[template(path = "pages/settings.html")]
+struct SettingsPage {
+    user_name: String,
+    is_sysadmin: bool,
+    flash: Option<FlashMsg>,
+    reunion: Reunion,
+    reunion_date: Option<ReunionDate>,
+    tabs: Vec<NavTab>,
+    tab_label: &'static str,
+    /// All family units annotated with whether they're enrolled in this reunion.
+    family_units: Vec<FamilyUnitWithEnrolled>,
+    /// All users annotated with whether they are currently an RA for this reunion.
+    all_users_with_ra: Vec<UserWithRaStatus>,
 }
 
 #[derive(Template)]
@@ -359,14 +483,16 @@ struct ReunionOverviewPage {
 struct AvailabilityPage {
     user_name: String,
     is_sysadmin: bool,
-    unread_count: i64,
     flash: Option<FlashMsg>,
     reunion: Reunion,
+    reunion_date: Option<ReunionDate>,
     my_dates_json: String,
     months: Vec<CalendarMonth>,
     editable: bool,
     is_ra: bool,
     heatmap: Vec<HeatmapRow>,
+    tabs: Vec<NavTab>,
+    tab_label: &'static str,
 }
 
 #[derive(Template)]
@@ -374,13 +500,14 @@ struct AvailabilityPage {
 struct LocationsPage {
     user_name: String,
     is_sysadmin: bool,
-    unread_count: i64,
     flash: Option<FlashMsg>,
     reunion: Reunion,
     locations: Vec<LocationPageView>,
     votes_revealed: bool,
     can_vote: bool,
     is_ra: bool,
+    tabs: Vec<NavTab>,
+    tab_label: &'static str,
 }
 
 #[derive(Template)]
@@ -388,11 +515,11 @@ struct LocationsPage {
 struct SchedulePage {
     user_name: String,
     is_sysadmin: bool,
-    unread_count: i64,
     flash: Option<FlashMsg>,
     reunion: Reunion,
     days: Vec<ScheduleDay>,
-    is_ra: bool,
+    tabs: Vec<NavTab>,
+    tab_label: &'static str,
 }
 
 #[derive(Template)]
@@ -400,9 +527,10 @@ struct SchedulePage {
 struct TodayPage {
     user_name: String,
     is_sysadmin: bool,
-    unread_count: i64,
     flash: Option<FlashMsg>,
     reunion: Reunion,
+    tabs: Vec<NavTab>,
+    tab_label: &'static str,
 }
 
 #[derive(Template)]
@@ -410,11 +538,14 @@ struct TodayPage {
 struct ActivitiesPage {
     user_name: String,
     is_sysadmin: bool,
-    unread_count: i64,
     flash: Option<FlashMsg>,
     reunion: Reunion,
+    reunion_date: Option<ReunionDate>,
     activities: Vec<ActivityPageView>,
     is_ra: bool,
+    tabs: Vec<NavTab>,
+    tab_label: &'static str,
+    default_activity_minutes: i32,
 }
 
 #[derive(Template)]
@@ -422,11 +553,12 @@ struct ActivitiesPage {
 struct MediaPage {
     user_name: String,
     is_sysadmin: bool,
-    unread_count: i64,
     flash: Option<FlashMsg>,
     reunion: Reunion,
     media: Vec<Media>,
     can_delete_media: bool,
+    tabs: Vec<NavTab>,
+    tab_label: &'static str,
 }
 
 #[derive(Template)]
@@ -434,7 +566,6 @@ struct MediaPage {
 struct ExpensesPage {
     user_name: String,
     is_sysadmin: bool,
-    unread_count: i64,
     flash: Option<FlashMsg>,
     reunion: Reunion,
     expenses: Vec<ExpensePageView>,
@@ -442,6 +573,9 @@ struct ExpensesPage {
     members: Vec<User>,
     current_user_id: Uuid,
     is_ra: bool,
+    expenses_confirmed: bool,
+    tabs: Vec<NavTab>,
+    tab_label: &'static str,
 }
 
 #[derive(Template)]
@@ -449,12 +583,12 @@ struct ExpensesPage {
 struct SurveyPage {
     user_name: String,
     is_sysadmin: bool,
-    unread_count: i64,
     flash: Option<FlashMsg>,
     reunion: Reunion,
     questions: Vec<SurveyQuestionView>,
-    can_respond: bool,
     is_ra: bool,
+    tabs: Vec<NavTab>,
+    tab_label: &'static str,
 }
 
 #[derive(Template)]
@@ -462,11 +596,20 @@ struct SurveyPage {
 struct AnnouncementsPage {
     user_name: String,
     is_sysadmin: bool,
-    unread_count: i64,
     flash: Option<FlashMsg>,
     reunion: Reunion,
     announcements: Vec<Announcement>,
     is_ra: bool,
+    tabs: Vec<NavTab>,
+    tab_label: &'static str,
+}
+
+pub struct ReunionAdminView {
+    pub id: Uuid,
+    pub title: String,
+    pub phase_label: String,
+    pub slug: Option<String>,
+    pub ra_names: String,
 }
 
 #[derive(Template)]
@@ -474,12 +617,11 @@ struct AnnouncementsPage {
 struct AdminPage {
     user_name: String,
     is_sysadmin: bool,
-    unread_count: i64,
     flash: Option<FlashMsg>,
     users: Vec<User>,
     family_units: Vec<FamilyUnit>,
-    host_rotation: Vec<HostRotationView>,
     storage: StorageStatsView,
+    reunions: Vec<ReunionAdminView>,
 }
 
 // ============================================================================
@@ -764,14 +906,86 @@ pub async fn dashboard(
     State(state): State<AppState>,
 ) -> Result<Response, Response> {
     let user = require_login(&session, &state).await?;
+
+    // Determine which reunions this user can access.
+    // Load membership data in two efficient queries.
+    let user_ra_ids: Vec<Uuid> = sqlx::query_scalar(
+        "SELECT reunion_id FROM reunion_admins WHERE user_id = $1",
+    )
+    .bind(user.id)
+    .fetch_all(state.db())
+    .await
+    .unwrap_or_default();
+
+    let user_enrolled_ids: Vec<Uuid> = if let Some(fu_id) = user.family_unit_id {
+        sqlx::query_scalar(
+            "SELECT reunion_id FROM reunion_family_units WHERE family_unit_id = $1",
+        )
+        .bind(fu_id)
+        .fetch_all(state.db())
+        .await
+        .unwrap_or_default()
+    } else {
+        vec![]
+    };
+
+    let all = Reunion::list_all(state.db()).await.unwrap_or_default();
+
+    // Filter to reunions accessible to this user.
+    let accessible: Vec<&Reunion> = all.iter().filter(|r| {
+        if user.is_sysadmin() { return true; }
+        let is_ra = user_ra_ids.contains(&r.id);
+        if r.phase == Phase::Draft { is_ra } else { is_ra || user_enrolled_ids.contains(&r.id) }
+    }).collect();
+
+    // If exactly one non-Draft accessible reunion, go straight to it.
+    let non_draft: Vec<&&Reunion> = accessible.iter().filter(|r| r.phase != Phase::Draft).collect();
+    if non_draft.len() == 1 {
+        let r = non_draft[0];
+        let url = match &r.slug {
+            Some(s) => format!("/r/{}", s),
+            None => format!("/reunions/{}", r.id),
+        };
+        return Ok(Redirect::to(&url).into_response());
+    }
+
     let flash = take_flash(&session).await;
-    let reunions = Reunion::list_all(state.db()).await.unwrap_or_default();
-    let unread = Notification::unread_count(state.db(), user.id).await.unwrap_or(0);
+    let has_archived = accessible.iter().any(|r| r.phase == Phase::Archived);
+
+    // Load RA names in one query for card display.
+    let admin_rows: Vec<(Uuid, String)> = sqlx::query_as(
+        "SELECT ra.reunion_id, u.display_name
+         FROM reunion_admins ra JOIN users u ON u.id = ra.user_id",
+    )
+    .fetch_all(state.db())
+    .await
+    .unwrap_or_default();
+
+    let reunions: Vec<ReunionCardView> = accessible
+        .into_iter()
+        .map(|r| {
+            let names: Vec<String> = admin_rows
+                .iter()
+                .filter(|(rid, _)| *rid == r.id)
+                .map(|(_, name)| name.clone())
+                .collect();
+            let ra_names = if names.is_empty() { String::new() } else { names.join(", ") };
+            ReunionCardView {
+                id: r.id,
+                title: r.title.clone(),
+                phase_label: r.phase.label().to_string(),
+                description: r.description.clone(),
+                slug: r.slug.clone(),
+                ra_names,
+            }
+        })
+        .collect();
+
     Ok(DashboardPage {
         user_name: user.display_name.clone(),
         is_sysadmin: user.is_sysadmin(),
-        unread_count: unread,
         flash,
+        has_archived,
         reunions,
     }
     .into_response())
@@ -785,11 +999,9 @@ pub async fn profile_page(
 ) -> Result<Response, Response> {
     let user = require_login(&session, &state).await?;
     let flash = take_flash(&session).await;
-    let unread = Notification::unread_count(state.db(), user.id).await.unwrap_or(0);
     Ok(ProfilePage {
         user_name: user.display_name.clone(),
         is_sysadmin: user.is_sysadmin(),
-        unread_count: unread,
         flash,
         email: user.email.clone(),
         display_name: user.display_name.clone(),
@@ -865,58 +1077,101 @@ pub async fn change_password_form(
     Ok(Redirect::to("/profile").into_response())
 }
 
-// ── GET /notifications ────────────────────────────────────────────────────────
-
-pub async fn notifications_page(
-    session: Session,
-    State(state): State<AppState>,
-) -> Result<Response, Response> {
-    let user = require_login(&session, &state).await?;
-    // Mark all as read
-    let _ = Notification::mark_all_read(state.db(), user.id).await;
-    Ok(Redirect::to("/dashboard").into_response())
-}
-
-// ── Reunion helper ────────────────────────────────────────────────────────────
-
-async fn load_reunion_or_redirect(
-    state: &AppState,
-    reunion_id: Uuid,
-) -> Result<Reunion, Response> {
-    Reunion::find_by_id(state.db(), reunion_id)
-        .await
-        .map_err(|_| Redirect::to("/dashboard").into_response())
-}
-
 // ── GET /reunions/:id ─────────────────────────────────────────────────────────
 
 pub async fn reunion_overview(
     session: Session,
     State(state): State<AppState>,
-    Path(reunion_id): Path<Uuid>,
+    SlugOrId(reunion_id): SlugOrId,
 ) -> Result<Response, Response> {
     let user = require_login(&session, &state).await?;
-    let reunion = load_reunion_or_redirect(&state, reunion_id).await?;
+    let mut reunion = helpers::load_reunion_for_member(&state, &user, reunion_id).await?;
     let flash = take_flash(&session).await;
-    let unread = Notification::unread_count(state.db(), user.id).await.unwrap_or(0);
-    let is_ra = user.is_ra_for(reunion.responsible_admin_id);
+    let is_ra = helpers::user_is_ra(&state, &user, reunion_id).await;
     let reunion_date = ReunionDate::find_for_reunion(state.db(), reunion_id).await.ok().flatten();
+
+    // Auto-activate: if PrepCompleted and the start date has arrived, advance to Active.
+    if let Some(activated) = helpers::maybe_auto_activate(&state, &reunion).await {
+        reunion = activated;
+    }
+
+    // Auto-redirect to Today view when the reunion is actively happening today.
+    if reunion.phase == Phase::Active {
+        if let Some(rd) = &reunion_date {
+            let tz_str = helpers::get_reunion_tz_string(&state, &reunion).await;
+            let tz: chrono_tz::Tz = tz_str.parse().unwrap_or(chrono_tz::UTC);
+            let today = chrono::Utc::now().with_timezone(&tz).date_naive();
+            if today >= rd.start_date && today <= rd.end_date {
+                let today_url = match &reunion.slug {
+                    Some(s) => format!("/r/{}/today", s),
+                    None => format!("/reunions/{}/today", reunion_id),
+                };
+                return Ok(Redirect::to(&today_url).into_response());
+            }
+        }
+    }
+
     let announcements = Announcement::list_for_reunion(state.db(), reunion_id)
         .await
         .unwrap_or_default()
         .into_iter()
         .take(3)
         .collect();
+
+    let avail_response_count = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(DISTINCT user_id) FROM availability WHERE reunion_id = $1",
+    )
+    .bind(reunion_id)
+    .fetch_one(state.db())
+    .await
+    .unwrap_or(0);
+
+    let member_count = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM users WHERE deactivated_at IS NULL AND email_verified_at IS NOT NULL",
+    )
+    .fetch_one(state.db())
+    .await
+    .unwrap_or(1)
+    .max(1);
+
+    let location_count = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM location_candidates WHERE reunion_id = $1",
+    )
+    .bind(reunion_id)
+    .fetch_one(state.db())
+    .await
+    .unwrap_or(0);
+
+    let base_url = match &reunion.slug {
+        Some(s) => format!("/r/{}", s),
+        None => format!("/reunions/{}", reunion_id),
+    };
+
+    let ra_name_list: Vec<String> = sqlx::query_scalar(
+        "SELECT u.display_name FROM reunion_admins ra JOIN users u ON u.id = ra.user_id \
+         WHERE ra.reunion_id = $1 ORDER BY u.display_name",
+    )
+    .bind(reunion_id)
+    .fetch_all(state.db())
+    .await
+    .unwrap_or_default();
+    let ra_names = ra_name_list.join(", ");
+
     Ok(ReunionOverviewPage {
         user_name: user.display_name.clone(),
         is_sysadmin: user.is_sysadmin(),
-        unread_count: unread,
         flash,
         tabs: reunion_tabs(reunion_id, ""),
+        tab_label: "Overview",
         reunion,
         reunion_date,
         is_ra,
         announcements,
+        avail_response_count,
+        member_count,
+        location_count,
+        base_url,
+        ra_names,
     }
     .into_response())
 }
@@ -926,13 +1181,12 @@ pub async fn reunion_overview(
 pub async fn availability_page(
     session: Session,
     State(state): State<AppState>,
-    Path(reunion_id): Path<Uuid>,
+    SlugOrId(reunion_id): SlugOrId,
 ) -> Result<Response, Response> {
     let user = require_login(&session, &state).await?;
-    let reunion = load_reunion_or_redirect(&state, reunion_id).await?;
+    let reunion = helpers::load_reunion_for_member(&state, &user, reunion_id).await?;
     let flash = take_flash(&session).await;
-    let unread = Notification::unread_count(state.db(), user.id).await.unwrap_or(0);
-    let is_ra = user.is_ra_for(reunion.responsible_admin_id);
+    let is_ra = helpers::user_is_ra(&state, &user, reunion_id).await;
 
     let my_dates = Availability::for_user(state.db(), reunion_id, user.id)
         .await
@@ -942,19 +1196,23 @@ pub async fn availability_page(
     )
     .unwrap_or_else(|_| "[]".into());
 
-    // Determine date range to show — use reunion dates or fallback to +3 months
-    let (start, end) = {
-        let rd = ReunionDate::find_for_reunion(state.db(), reunion_id)
-            .await
-            .ok()
-            .flatten();
-        match rd {
-            Some(ref d) => (d.start_date, d.end_date),
+    // Determine date range to show:
+    //   1. RA-set poll window (avail_poll_start/end on the reunion row)
+    //   2. Confirmed reunion dates
+    //   3. Fallback: today + 90 days
+    let reunion_date = ReunionDate::find_for_reunion(state.db(), reunion_id)
+        .await
+        .ok()
+        .flatten();
+    let (start, end) = match (reunion.avail_poll_start, reunion.avail_poll_end) {
+        (Some(s), Some(e)) => (s, e),
+        _ => match &reunion_date {
+            Some(d) => (d.start_date, d.end_date),
             None => {
                 let today = chrono::Local::now().date_naive();
                 (today, today + chrono::Duration::days(90))
             }
-        }
+        },
     };
     let months = build_calendar_months(start, end);
 
@@ -987,9 +1245,11 @@ pub async fn availability_page(
     Ok(AvailabilityPage {
         user_name: user.display_name.clone(),
         is_sysadmin: user.is_sysadmin(),
-        unread_count: unread,
         flash,
+        tabs: reunion_tabs(reunion_id, "availability"),
+        tab_label: "Availability",
         reunion,
+        reunion_date,
         my_dates_json,
         months,
         editable,
@@ -1004,17 +1264,22 @@ pub async fn availability_page(
 pub async fn locations_page(
     session: Session,
     State(state): State<AppState>,
-    Path(reunion_id): Path<Uuid>,
+    SlugOrId(reunion_id): SlugOrId,
 ) -> Result<Response, Response> {
     use crate::models::location::LocationVote;
 
     let user = require_login(&session, &state).await?;
-    let reunion = load_reunion_or_redirect(&state, reunion_id).await?;
+    let reunion = helpers::load_reunion_for_member(&state, &user, reunion_id).await?;
     let flash = take_flash(&session).await;
-    let unread = Notification::unread_count(state.db(), user.id).await.unwrap_or(0);
-    let is_ra = user.is_ra_for(reunion.responsible_admin_id);
+    let is_ra = helpers::user_is_ra(&state, &user, reunion_id).await;
     let votes_revealed = reunion.location_votes_revealed;
-    let can_vote = matches!(reunion.phase, Phase::Locations | Phase::LocationSelected);
+    // Voting is open from Availability onward (parallel with the dates poll).
+    // RA can always vote.
+    let can_vote = is_ra
+        || matches!(
+            reunion.phase,
+            Phase::Availability | Phase::Locations | Phase::PrepCompleted | Phase::Active
+        );
 
     let candidates = LocationCandidate::list_for_reunion(state.db(), reunion_id)
         .await
@@ -1029,19 +1294,33 @@ pub async fn locations_page(
         } else {
             String::new()
         };
+        let selected = reunion.selected_location_id == Some(c.id);
+        let my_vote_score = my_vote.as_ref().map(|v| v.score);
+        let my_vote_comment = my_vote.and_then(|v| v.comment);
+        let ra_votes = if is_ra {
+            LocationVote::votes_with_names_for_candidate(state.db(), c.id)
+                .await
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        };
         locations.push(LocationPageView {
             candidate: c,
             avg_score_str,
             vote_count,
-            my_vote_score: my_vote,
+            my_vote_score,
+            my_vote_comment,
+            ra_votes,
+            selected,
         });
     }
 
     Ok(LocationsPage {
         user_name: user.display_name.clone(),
         is_sysadmin: user.is_sysadmin(),
-        unread_count: unread,
         flash,
+        tabs: reunion_tabs(reunion_id, "locations"),
+        tab_label: "Locations",
         reunion,
         locations,
         votes_revealed,
@@ -1056,16 +1335,13 @@ pub async fn locations_page(
 pub async fn schedule_page(
     session: Session,
     State(state): State<AppState>,
-    Path(reunion_id): Path<Uuid>,
+    SlugOrId(reunion_id): SlugOrId,
 ) -> Result<Response, Response> {
     use crate::models::schedule::SignupSlot;
 
     let user = require_login(&session, &state).await?;
-    let reunion = load_reunion_or_redirect(&state, reunion_id).await?;
+    let reunion = helpers::load_reunion_for_member(&state, &user, reunion_id).await?;
     let flash = take_flash(&session).await;
-    let unread = Notification::unread_count(state.db(), user.id).await.unwrap_or(0);
-    let is_ra = user.is_ra_for(reunion.responsible_admin_id);
-
     let blocks = ScheduleBlock::list_for_reunion(state.db(), reunion_id)
         .await
         .unwrap_or_default();
@@ -1107,11 +1383,11 @@ pub async fn schedule_page(
     Ok(SchedulePage {
         user_name: user.display_name.clone(),
         is_sysadmin: user.is_sysadmin(),
-        unread_count: unread,
         flash,
+        tabs: reunion_tabs(reunion_id, "schedule"),
+        tab_label: "Schedule",
         reunion,
         days,
-        is_ra,
     }
     .into_response())
 }
@@ -1121,17 +1397,17 @@ pub async fn schedule_page(
 pub async fn today_page(
     session: Session,
     State(state): State<AppState>,
-    Path(reunion_id): Path<Uuid>,
+    SlugOrId(reunion_id): SlugOrId,
 ) -> Result<Response, Response> {
     let user = require_login(&session, &state).await?;
-    let reunion = load_reunion_or_redirect(&state, reunion_id).await?;
+    let reunion = helpers::load_reunion_for_member(&state, &user, reunion_id).await?;
     let flash = take_flash(&session).await;
-    let unread = Notification::unread_count(state.db(), user.id).await.unwrap_or(0);
     Ok(TodayPage {
         user_name: user.display_name.clone(),
         is_sysadmin: user.is_sysadmin(),
-        unread_count: unread,
         flash,
+        tabs: reunion_tabs(reunion_id, "today"),
+        tab_label: "Today",
         reunion,
     }
     .into_response())
@@ -1142,15 +1418,18 @@ pub async fn today_page(
 pub async fn activities_page(
     session: Session,
     State(state): State<AppState>,
-    Path(reunion_id): Path<Uuid>,
+    SlugOrId(reunion_id): SlugOrId,
 ) -> Result<Response, Response> {
     use crate::models::activity::ActivityVote;
 
     let user = require_login(&session, &state).await?;
-    let reunion = load_reunion_or_redirect(&state, reunion_id).await?;
+    let reunion = helpers::load_reunion_for_member(&state, &user, reunion_id).await?;
     let flash = take_flash(&session).await;
-    let unread = Notification::unread_count(state.db(), user.id).await.unwrap_or(0);
-    let is_ra = user.is_ra_for(reunion.responsible_admin_id);
+    let is_ra = helpers::user_is_ra(&state, &user, reunion_id).await;
+    let reunion_date = ReunionDate::find_for_reunion(state.db(), reunion_id)
+        .await
+        .ok()
+        .flatten();
 
     let ideas = ActivityIdea::list_for_reunion(state.db(), reunion_id)
         .await
@@ -1175,23 +1454,60 @@ pub async fn activities_page(
             .avg_interest
             .map(|v| format!("{:.1}", v))
             .unwrap_or_default();
+        let rsvp_rows = sqlx::query_as::<_, (uuid::Uuid, String)>(
+            "SELECT ar.user_id, u.display_name
+             FROM activity_rsvps ar
+             JOIN users u ON u.id = ar.user_id
+             WHERE ar.activity_idea_id = $1
+             ORDER BY u.display_name",
+        )
+        .bind(idea.id)
+        .fetch_all(state.db())
+        .await
+        .unwrap_or_default();
+        let rsvp_count = rsvp_rows.len() as i64;
+        let my_rsvp = rsvp_rows.iter().any(|(uid, _)| *uid == user.id);
+        let rsvp_names_str = rsvp_rows.iter().map(|(_, n)| n.as_str()).collect::<Vec<_>>().join(", ");
+        let proposer: (String, Option<String>) = sqlx::query_as(
+            "SELECT u.display_name, f.name
+             FROM users u
+             LEFT JOIN family_units f ON f.id = u.family_unit_id
+             WHERE u.id = $1",
+        )
+        .bind(idea.proposed_by)
+        .fetch_optional(state.db())
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| ("Unknown".to_string(), None));
+        let is_own_idea = idea.proposed_by == user.id;
         activities.push(ActivityPageView {
             idea,
             avg_interest_str,
             vote_count: summary.vote_count,
             comment_count: summary.comment_count,
             my_vote,
+            rsvp_count,
+            my_rsvp,
+            rsvp_names_str,
+            proposed_by_name: proposer.0,
+            proposed_by_family: proposer.1,
+            is_own_idea,
         });
     }
 
+    let default_activity_minutes = reunion.default_activity_duration_minutes;
     Ok(ActivitiesPage {
         user_name: user.display_name.clone(),
         is_sysadmin: user.is_sysadmin(),
-        unread_count: unread,
         flash,
+        tabs: reunion_tabs(reunion_id, "activities"),
+        tab_label: "Activities",
         reunion,
+        reunion_date,
         activities,
         is_ra,
+        default_activity_minutes,
     }
     .into_response())
 }
@@ -1201,13 +1517,12 @@ pub async fn activities_page(
 pub async fn media_page(
     session: Session,
     State(state): State<AppState>,
-    Path(reunion_id): Path<Uuid>,
+    SlugOrId(reunion_id): SlugOrId,
 ) -> Result<Response, Response> {
     let user = require_login(&session, &state).await?;
-    let reunion = load_reunion_or_redirect(&state, reunion_id).await?;
+    let reunion = helpers::load_reunion_for_member(&state, &user, reunion_id).await?;
     let flash = take_flash(&session).await;
-    let unread = Notification::unread_count(state.db(), user.id).await.unwrap_or(0);
-    let is_ra = user.is_ra_for(reunion.responsible_admin_id);
+    let is_ra = helpers::user_is_ra(&state, &user, reunion_id).await;
 
     let media = Media::list_for_reunion(state.db(), reunion_id)
         .await
@@ -1216,8 +1531,9 @@ pub async fn media_page(
     Ok(MediaPage {
         user_name: user.display_name.clone(),
         is_sysadmin: user.is_sysadmin(),
-        unread_count: unread,
         flash,
+        tabs: reunion_tabs(reunion_id, "media"),
+        tab_label: "Photos",
         reunion,
         media,
         can_delete_media: is_ra || user.is_sysadmin(),
@@ -1230,13 +1546,12 @@ pub async fn media_page(
 pub async fn expenses_page(
     session: Session,
     State(state): State<AppState>,
-    Path(reunion_id): Path<Uuid>,
+    SlugOrId(reunion_id): SlugOrId,
 ) -> Result<Response, Response> {
     let user = require_login(&session, &state).await?;
-    let reunion = load_reunion_or_redirect(&state, reunion_id).await?;
+    let reunion = helpers::load_reunion_for_member(&state, &user, reunion_id).await?;
     let flash = take_flash(&session).await;
-    let unread = Notification::unread_count(state.db(), user.id).await.unwrap_or(0);
-    let is_ra = user.is_ra_for(reunion.responsible_admin_id);
+    let is_ra = helpers::user_is_ra(&state, &user, reunion_id).await;
 
     let expense_list = Expense::list_for_reunion(state.db(), reunion_id)
         .await
@@ -1277,17 +1592,28 @@ pub async fn expenses_page(
         })
         .collect();
 
+    let expenses_confirmed = sqlx::query_scalar::<_, bool>(
+        "SELECT COUNT(*) > 0 FROM expense_confirmations WHERE reunion_id = $1 AND user_id = $2",
+    )
+    .bind(reunion_id)
+    .bind(user.id)
+    .fetch_one(state.db())
+    .await
+    .unwrap_or(false);
+
     Ok(ExpensesPage {
         user_name: user.display_name.clone(),
         is_sysadmin: user.is_sysadmin(),
-        unread_count: unread,
         flash,
+        tabs: reunion_tabs(reunion_id, "expenses"),
+        tab_label: "Expenses",
         reunion,
         expenses,
         balances,
         members: all_users,
         current_user_id: user.id,
         is_ra,
+        expenses_confirmed,
     }
     .into_response())
 }
@@ -1297,44 +1623,61 @@ pub async fn expenses_page(
 pub async fn survey_page(
     session: Session,
     State(state): State<AppState>,
-    Path(reunion_id): Path<Uuid>,
+    SlugOrId(reunion_id): SlugOrId,
 ) -> Result<Response, Response> {
-    use crate::models::feedback::SurveyResponse;
 
     let user = require_login(&session, &state).await?;
-    let reunion = load_reunion_or_redirect(&state, reunion_id).await?;
+    let reunion = helpers::load_reunion_for_member(&state, &user, reunion_id).await?;
     let flash = take_flash(&session).await;
-    let unread = Notification::unread_count(state.db(), user.id).await.unwrap_or(0);
-    let is_ra = user.is_ra_for(reunion.responsible_admin_id);
-    let can_respond = matches!(reunion.phase, Phase::PostReunion | Phase::Archived);
+    let is_ra = helpers::user_is_ra(&state, &user, reunion_id).await;
 
     let qs = SurveyQuestion::list_for_reunion(state.db(), reunion_id)
         .await
         .unwrap_or_default();
-    let all_responses = SurveyResponse::list_for_reunion(state.db(), reunion_id)
+    // Current user's own responses (may be multiple per question)
+    let own_responses = SurveyResponse::list_for_user(state.db(), reunion_id, user.id)
         .await
         .unwrap_or_default();
+    // All responses with names — RA only
+    let named_responses = if is_ra {
+        SurveyResponse::list_for_reunion_with_names(state.db(), reunion_id)
+            .await
+            .unwrap_or_default()
+    } else {
+        vec![]
+    };
 
     let questions = qs
         .into_iter()
         .map(|q| {
-            let my_response = all_responses
+            let my_responses = own_responses
                 .iter()
-                .find(|r| r.survey_question_id == q.id && r.user_id == user.id)
-                .map(|r| r.response_text.clone())
-                .unwrap_or_default();
-            SurveyQuestionView { question: q, my_response }
+                .filter(|r| r.survey_question_id == q.id)
+                .map(|r| MyResponseView {
+                    id: r.id,
+                    response_text: r.response_text.clone(),
+                })
+                .collect();
+            let all_responses = named_responses
+                .iter()
+                .filter(|r| r.survey_question_id == q.id)
+                .map(|r| SurveyResponseView {
+                    display_name: r.display_name.clone(),
+                    response_text: r.response_text.clone(),
+                })
+                .collect();
+            SurveyQuestionView { question: q, my_responses, all_responses }
         })
         .collect();
 
     Ok(SurveyPage {
         user_name: user.display_name.clone(),
         is_sysadmin: user.is_sysadmin(),
-        unread_count: unread,
         flash,
+        tabs: reunion_tabs(reunion_id, "survey"),
+        tab_label: "Survey",
         reunion,
         questions,
-        can_respond,
         is_ra,
     }
     .into_response())
@@ -1345,13 +1688,12 @@ pub async fn survey_page(
 pub async fn announcements_page(
     session: Session,
     State(state): State<AppState>,
-    Path(reunion_id): Path<Uuid>,
+    SlugOrId(reunion_id): SlugOrId,
 ) -> Result<Response, Response> {
     let user = require_login(&session, &state).await?;
-    let reunion = load_reunion_or_redirect(&state, reunion_id).await?;
+    let reunion = helpers::load_reunion_for_member(&state, &user, reunion_id).await?;
     let flash = take_flash(&session).await;
-    let unread = Notification::unread_count(state.db(), user.id).await.unwrap_or(0);
-    let is_ra = user.is_ra_for(reunion.responsible_admin_id);
+    let is_ra = helpers::user_is_ra(&state, &user, reunion_id).await;
 
     let announcements = Announcement::list_for_reunion(state.db(), reunion_id)
         .await
@@ -1360,11 +1702,65 @@ pub async fn announcements_page(
     Ok(AnnouncementsPage {
         user_name: user.display_name.clone(),
         is_sysadmin: user.is_sysadmin(),
-        unread_count: unread,
         flash,
+        tabs: reunion_tabs(reunion_id, "announcements"),
+        tab_label: "Announcements",
         reunion,
         announcements,
         is_ra,
+    }
+    .into_response())
+}
+
+// ── GET /reunions/:id/settings ────────────────────────────────────────────────
+
+pub async fn settings_page(
+    session: Session,
+    State(state): State<AppState>,
+    SlugOrId(reunion_id): SlugOrId,
+) -> Result<Response, Response> {
+    let user = require_login(&session, &state).await?;
+    let reunion = helpers::load_reunion_for_member(&state, &user, reunion_id).await?;
+    let is_ra = helpers::user_is_ra(&state, &user, reunion_id).await;
+    // Only RA or sysadmin may access settings
+    if !is_ra && !user.is_sysadmin() {
+        return Err(Redirect::to(&format!("/reunions/{}", reunion_id)).into_response());
+    }
+    let flash = take_flash(&session).await;
+    let reunion_date = ReunionDate::find_for_reunion(state.db(), reunion_id).await.ok().flatten();
+    let raw_family_units = FamilyUnit::list_all(state.db()).await.unwrap_or_default();
+    let enrolled_ids = ReunionFamilyUnit::list_ids_for_reunion(state.db(), reunion_id)
+        .await
+        .unwrap_or_default();
+    let family_units: Vec<FamilyUnitWithEnrolled> = raw_family_units
+        .into_iter()
+        .map(|fu| {
+            let enrolled = enrolled_ids.contains(&fu.id);
+            FamilyUnitWithEnrolled { id: fu.id, name: fu.name, enrolled }
+        })
+        .collect();
+    let ra_ids = ReunionAdmin::list_ids_for_reunion(state.db(), reunion_id)
+        .await
+        .unwrap_or_default();
+    let all_users_raw = User::list_all(state.db()).await.unwrap_or_default();
+    let all_users_with_ra: Vec<UserWithRaStatus> = all_users_raw
+        .into_iter()
+        .map(|u| {
+            let is_ra = ra_ids.contains(&u.id);
+            UserWithRaStatus { id: u.id, display_name: u.display_name, email: u.email, is_ra }
+        })
+        .collect();
+
+    Ok(SettingsPage {
+        user_name: user.display_name.clone(),
+        is_sysadmin: user.is_sysadmin(),
+        flash,
+        tabs: reunion_tabs(reunion_id, "settings"),
+        tab_label: "Settings",
+        reunion,
+        reunion_date,
+        family_units,
+        all_users_with_ra,
     }
     .into_response())
 }
@@ -1377,28 +1773,9 @@ pub async fn admin_page(
 ) -> Result<Response, Response> {
     let admin = require_sysadmin(&session, &state).await?;
     let flash = take_flash(&session).await;
-    let unread = Notification::unread_count(state.db(), admin.id).await.unwrap_or(0);
 
     let users = User::list_all(state.db()).await.unwrap_or_default();
     let family_units = FamilyUnit::list_all(state.db()).await.unwrap_or_default();
-    let hr_raw = HostRotation::list_all(state.db()).await.unwrap_or_default();
-
-    let host_rotation = hr_raw
-        .into_iter()
-        .map(|hr| {
-            let family_unit_name = family_units
-                .iter()
-                .find(|fu| fu.id == hr.family_unit_id)
-                .map(|fu| fu.name.clone())
-                .unwrap_or_else(|| hr.family_unit_id.to_string());
-            HostRotationView {
-                id: hr.id,
-                family_unit_name,
-                is_next: hr.is_next,
-                reunion_year: hr.notes.clone(),
-            }
-        })
-        .collect();
 
     let (total_bytes, total_files): (Option<i64>, i64) = sqlx::query_as(
         "SELECT SUM(file_size_bytes), COUNT(*) FROM media",
@@ -1410,15 +1787,44 @@ pub async fn admin_page(
     let total_mb = format!("{:.1}", total_bytes.unwrap_or(0) as f64 / 1_048_576.0);
     let storage = StorageStatsView { total_files, total_mb };
 
+    let all_reunions = Reunion::list_all(state.db()).await.unwrap_or_default();
+
+    // Load all reunion_admins in one query
+    let all_admin_rows: Vec<(Uuid, Uuid, String)> = sqlx::query_as(
+        "SELECT ra.reunion_id, ra.user_id, u.display_name
+         FROM reunion_admins ra JOIN users u ON u.id = ra.user_id"
+    )
+    .fetch_all(state.db())
+    .await
+    .unwrap_or_default();
+
+    let reunions: Vec<ReunionAdminView> = all_reunions
+        .into_iter()
+        .map(|r| {
+            let ra_names: Vec<String> = all_admin_rows
+                .iter()
+                .filter(|(rid, _, _)| *rid == r.id)
+                .map(|(_, _, name)| name.clone())
+                .collect();
+            let ra_names_str = if ra_names.is_empty() { "Unassigned".into() } else { ra_names.join(", ") };
+            ReunionAdminView {
+                id: r.id,
+                title: r.title,
+                phase_label: r.phase.label().to_string(),
+                slug: r.slug,
+                ra_names: ra_names_str,
+            }
+        })
+        .collect();
+
     Ok(AdminPage {
         user_name: admin.display_name.clone(),
         is_sysadmin: true,
-        unread_count: unread,
         flash,
         users,
         family_units,
-        host_rotation,
         storage,
+        reunions,
     }
     .into_response())
 }

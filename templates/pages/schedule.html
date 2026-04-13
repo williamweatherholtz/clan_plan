@@ -1,38 +1,20 @@
-{% extends "layout_app.html" %}
+{% extends "layout_reunion.html" %}
 
 {% block title %}Schedule — {{ reunion.title }}{% endblock %}
 
-{% block breadcrumb %}
-<span class="text-gray-300 mx-2">/</span>
-<a href="/reunions/{{ reunion.id }}" class="text-sm text-gray-500 hover:text-gray-700">{{ reunion.title }}</a>
-<span class="text-gray-300 mx-2">/</span>
-<span class="text-sm text-gray-600">Schedule</span>
-{% endblock %}
-
-{% block content %}
+{% block reunion_content %}
 <div class="flex items-center justify-between mb-6">
   <h1 class="text-2xl font-bold text-gray-900">Schedule</h1>
-  <div class="flex gap-2">
-    <a href="/api/reunions/{{ reunion.id }}/schedule.ics"
-       class="px-3 py-1.5 text-sm font-medium text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50">
-      📅 Export .ics
-    </a>
-    {% if is_ra %}
-    <button onclick="document.getElementById('add-block-modal').classList.remove('hidden')"
-            class="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold rounded-lg">
-      + Add block
-    </button>
-    {% endif %}
-  </div>
+  <a href="/api/reunions/{{ reunion.id }}/schedule.ics"
+     class="px-3 py-1.5 text-sm font-medium text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50">
+    📅 Export .ics
+  </a>
 </div>
 
 {% if days.is_empty() %}
 <div class="text-center py-16 bg-white rounded-xl border border-dashed border-gray-200">
   <span class="text-4xl">📅</span>
   <p class="mt-3 text-gray-500">No schedule blocks yet.</p>
-  {% if is_ra %}
-  <p class="text-sm text-gray-400 mt-1">Add the first one above.</p>
-  {% endif %}
 </div>
 {% else %}
 <div class="space-y-6">
@@ -44,16 +26,14 @@
       <div class="bg-white rounded-xl border-l-4 border border-gray-100 shadow-sm p-4
         {% if b.block.block_type.label() == "group" %}block-group
         {% else if b.block.block_type.label() == "optional" %}block-optional
-        {% else if b.block.block_type.label() == "meal" %}block-meal
-        {% else %}block-travel{% endif %}">
+        {% else %}block-meal{% endif %}">
         <div class="flex justify-between items-start">
           <div class="flex-1">
             <div class="flex items-center gap-2">
               <span class="text-xs font-medium px-2 py-0.5 rounded-full
                 {% if b.block.block_type.label() == "group" %}bg-blue-100 text-blue-700
                 {% else if b.block.block_type.label() == "optional" %}bg-green-100 text-green-700
-                {% else if b.block.block_type.label() == "meal" %}bg-amber-100 text-amber-700
-                {% else %}bg-purple-100 text-purple-700{% endif %}">
+                {% else %}bg-amber-100 text-amber-700{% endif %}">
                 {{ b.block.block_type.label() }}
               </span>
               <h3 class="font-semibold text-gray-900">{{ b.block.title }}</h3>
@@ -66,7 +46,7 @@
             {% endif %}
           </div>
           <div class="ml-4 text-sm text-gray-500 whitespace-nowrap flex-shrink-0">
-            {{ b.block.start_time.format("%H:%M") }} – {{ b.block.end_time.format("%H:%M") }}
+            {{ b.block.start_time.format("%I:%M %p") }} – {{ b.block.end_time.format("%I:%M %p") }}
           </div>
         </div>
 
@@ -109,143 +89,11 @@
           {% endif %}
         </div>
         {% endfor %}
-
-        {% if is_ra %}
-        <div class="mt-3 flex gap-2 flex-wrap">
-          <button onclick="openAddSlot('{{ b.block.id }}')"
-                  class="px-2 py-1 text-xs text-gray-500 border border-gray-200 rounded hover:bg-gray-50">
-            + slot
-          </button>
-          <button onclick="confirmAction('Delete this block and all its slots?',()=>apiFetch('DELETE','/reunions/{{ reunion.id }}/schedule/{{ b.block.id }}'))"
-                  class="px-2 py-1 text-xs text-red-500 border border-red-200 rounded hover:bg-red-50">
-            Delete
-          </button>
-        </div>
-        {% endif %}
       </div>
       {% endfor %}
     </div>
   </div>
   {% endfor %}
 </div>
-{% endif %}
-
-{% if is_ra %}
-<!-- Add block modal -->
-<div id="add-block-modal" class="hidden fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-  <div class="bg-white rounded-xl shadow-xl w-full max-w-md p-6 max-h-[90vh] overflow-y-auto">
-    <h2 class="text-lg font-semibold text-gray-900 mb-4">Add Schedule Block</h2>
-    <form id="add-block-form" class="space-y-4">
-      <div>
-        <label class="block text-sm font-medium text-gray-700 mb-1">Title *</label>
-        <input id="blk-title" type="text" required class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
-      </div>
-      <div class="grid grid-cols-2 gap-3">
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Date *</label>
-          <input id="blk-date" type="date" required class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Type *</label>
-          <select id="blk-type" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
-            <option value="group">Group</option>
-            <option value="optional">Optional</option>
-            <option value="meal">Meal</option>
-            <option value="travel">Travel</option>
-          </select>
-        </div>
-      </div>
-      <div class="grid grid-cols-2 gap-3">
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Start time *</label>
-          <input id="blk-start" type="time" required class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">End time *</label>
-          <input id="blk-end" type="time" required class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
-        </div>
-      </div>
-      <div>
-        <label class="block text-sm font-medium text-gray-700 mb-1">Location note</label>
-        <input id="blk-loc" type="text" placeholder="e.g. Main dining hall"
-               class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
-      </div>
-      <div>
-        <label class="block text-sm font-medium text-gray-700 mb-1">Description</label>
-        <textarea id="blk-desc" rows="2"
-                  class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"></textarea>
-      </div>
-      <div class="flex justify-end space-x-3 pt-2">
-        <button type="button" onclick="document.getElementById('add-block-modal').classList.add('hidden')"
-                class="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">Cancel</button>
-        <button type="submit" class="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold rounded-lg">Add</button>
-      </div>
-    </form>
-  </div>
-</div>
-<script>
-let addSlotBlockId = null;
-function openAddSlot(blockId) { addSlotBlockId = blockId; document.getElementById('add-slot-modal').classList.remove('hidden'); }
-document.getElementById('add-block-form').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  try {
-    await apiFetch('POST', '/reunions/{{ reunion.id }}/schedule', {
-      title: document.getElementById('blk-title').value,
-      block_date: document.getElementById('blk-date').value,
-      block_type: document.getElementById('blk-type').value,
-      start_time: document.getElementById('blk-start').value + ':00',
-      end_time: document.getElementById('blk-end').value + ':00',
-      location_note: document.getElementById('blk-loc').value || null,
-      description: document.getElementById('blk-desc').value || null,
-    });
-    window.location.reload();
-  } catch (err) { showToast(err.message, 'error'); }
-});
-</script>
-<!-- Add slot modal -->
-<div id="add-slot-modal" class="hidden fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-  <div class="bg-white rounded-xl shadow-xl w-full max-w-sm p-6">
-    <h2 class="text-lg font-semibold text-gray-900 mb-4">Add Signup Slot</h2>
-    <form id="add-slot-form" class="space-y-4">
-      <div>
-        <label class="block text-sm font-medium text-gray-700 mb-1">Role name *</label>
-        <input id="slot-role" type="text" required placeholder="e.g. Cook, Driver"
-               class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
-      </div>
-      <div class="grid grid-cols-2 gap-3">
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Min</label>
-          <input id="slot-min" type="number" value="0" min="0"
-                 class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1">Max (optional)</label>
-          <input id="slot-max" type="number" min="1"
-                 class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
-        </div>
-      </div>
-      <div class="flex justify-end space-x-3 pt-2">
-        <button type="button" onclick="document.getElementById('add-slot-modal').classList.add('hidden')"
-                class="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">Cancel</button>
-        <button type="submit" class="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold rounded-lg">Add slot</button>
-      </div>
-    </form>
-  </div>
-</div>
-<script>
-document.getElementById('add-slot-form').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const maxVal = document.getElementById('slot-max').value;
-  try {
-    await apiFetch('POST', `/reunions/{{ reunion.id }}/schedule/${addSlotBlockId}/slots`, {
-      role_name: document.getElementById('slot-role').value,
-      description: null,
-      min_count: parseInt(document.getElementById('slot-min').value) || 0,
-      max_count: maxVal ? parseInt(maxVal) : null,
-    });
-    window.location.reload();
-  } catch (err) { showToast(err.message, 'error'); }
-});
-</script>
 {% endif %}
 {% endblock %}

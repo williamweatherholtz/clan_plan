@@ -68,6 +68,17 @@ pub struct ActivityComment {
     pub updated_at: DateTime<Utc>,
 }
 
+/// Comment enriched with the author's display name for API responses.
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct ActivityCommentView {
+    pub id: Uuid,
+    pub activity_idea_id: Uuid,
+    pub user_id: Uuid,
+    pub content: String,
+    pub created_at: DateTime<Utc>,
+    pub display_name: String,
+}
+
 /// Aggregate interest summary for displaying in list views.
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 pub struct ActivitySummary {
@@ -123,7 +134,9 @@ impl ActivityIdea {
         reunion_id: Uuid,
     ) -> AppResult<Vec<ActivityIdea>> {
         Ok(sqlx::query_as::<_, ActivityIdea>(
-            "SELECT * FROM activity_ideas WHERE reunion_id = $1 ORDER BY status, created_at DESC",
+            "SELECT * FROM activity_ideas WHERE reunion_id = $1 \
+             ORDER BY CASE status WHEN 'pinned' THEN 0 WHEN 'proposed' THEN 1 WHEN 'scheduled' THEN 2 ELSE 3 END, \
+             created_at DESC",
         )
         .bind(reunion_id)
         .fetch_all(pool)
@@ -143,6 +156,30 @@ impl ActivityIdea {
         .fetch_optional(pool)
         .await?
         .ok_or(AppError::NotFound)
+    }
+
+    pub async fn delete(
+        pool: &PgPool,
+        idea_id: Uuid,
+        requesting_user_id: Uuid,
+        is_admin: bool,
+    ) -> AppResult<()> {
+        let result = if is_admin {
+            sqlx::query("DELETE FROM activity_ideas WHERE id = $1")
+                .bind(idea_id)
+                .execute(pool)
+                .await?
+        } else {
+            sqlx::query("DELETE FROM activity_ideas WHERE id = $1 AND proposed_by = $2")
+                .bind(idea_id)
+                .bind(requesting_user_id)
+                .execute(pool)
+                .await?
+        };
+        if result.rows_affected() == 0 {
+            return Err(AppError::Forbidden);
+        }
+        Ok(())
     }
 
     pub async fn promote_to_block(
@@ -182,19 +219,29 @@ impl ActivityIdea {
         .await?)
     }
 
-    /// Aggregated interest scores + comment counts for an entire reunion.
+    /// Family-unit-weighted interest score + comment count for an entire reunion.
+    /// Each family unit counts as one vote regardless of member count.
     pub async fn summaries_for_reunion(
         pool: &PgPool,
         reunion_id: Uuid,
     ) -> AppResult<Vec<ActivitySummary>> {
         Ok(sqlx::query_as::<_, ActivitySummary>(
-            r#"SELECT
-                ai.id AS idea_id,
-                AVG(av.interest_score::float) AS avg_interest,
-                COUNT(DISTINCT av.id)          AS vote_count,
-                COUNT(DISTINCT ac.id)          AS comment_count
+            r#"WITH per_family AS (
+                 SELECT av.activity_idea_id AS idea_id,
+                        COALESCE(u.family_unit_id::text, u.id::text) AS group_key,
+                        AVG(av.interest_score::float) AS family_avg
+                 FROM activity_votes av
+                 JOIN users u ON u.id = av.user_id
+                 JOIN activity_ideas ai2 ON ai2.id = av.activity_idea_id
+                 WHERE ai2.reunion_id = $1
+                 GROUP BY av.activity_idea_id, group_key
+               )
+               SELECT ai.id                           AS idea_id,
+                      AVG(pf.family_avg)              AS avg_interest,
+                      COUNT(DISTINCT pf.group_key)    AS vote_count,
+                      COUNT(DISTINCT ac.id)           AS comment_count
                FROM activity_ideas ai
-               LEFT JOIN activity_votes    av ON av.activity_idea_id = ai.id
+               LEFT JOIN per_family pf ON pf.idea_id = ai.id
                LEFT JOIN activity_comments ac ON ac.activity_idea_id = ai.id
                WHERE ai.reunion_id = $1
                GROUP BY ai.id
@@ -271,6 +318,24 @@ impl ActivityComment {
     ) -> AppResult<Vec<ActivityComment>> {
         Ok(sqlx::query_as::<_, ActivityComment>(
             "SELECT * FROM activity_comments WHERE activity_idea_id = $1 ORDER BY created_at",
+        )
+        .bind(idea_id)
+        .fetch_all(pool)
+        .await?)
+    }
+
+    /// Comments enriched with the author's display name, for API responses.
+    pub async fn list_with_names(
+        pool: &PgPool,
+        idea_id: Uuid,
+    ) -> AppResult<Vec<ActivityCommentView>> {
+        Ok(sqlx::query_as::<_, ActivityCommentView>(
+            r#"SELECT ac.id, ac.activity_idea_id, ac.user_id, ac.content, ac.created_at,
+                      u.display_name
+               FROM activity_comments ac
+               JOIN users u ON u.id = ac.user_id
+               WHERE ac.activity_idea_id = $1
+               ORDER BY ac.created_at"#,
         )
         .bind(idea_id)
         .fetch_all(pool)

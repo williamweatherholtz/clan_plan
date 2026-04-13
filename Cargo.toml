@@ -1,14 +1,14 @@
 [package]
-name = "familyer"
+name = "clanplan"
 version = "0.1.0"
 edition = "2021"
 
 [[bin]]
-name = "familyer"
+name = "clanplan"
 path = "src/main.rs"
 
 [lib]
-name = "familyer"
+name = "clanplan"
 path = "src/lib.rs"
 
 [dependencies]
@@ -46,6 +46,7 @@ lettre = { version = "0.11", features = ["tokio1-native-tls", "builder"] }
 # Utilities
 uuid = { version = "1", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
+chrono-tz = "0.9"
 dotenvy = "0.15"
 anyhow = "1"
 thiserror = "1"

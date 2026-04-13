@@ -1,0 +1,115 @@
+{% extends "layout_app.html" %}
+
+{% block breadcrumb %}
+<span class="text-indigo-200 mx-2 text-xs">/</span>
+<a href="{% if let Some(s) = reunion.slug %}/r/{{ s }}{% else %}/reunions/{{ reunion.id }}{% endif %}"
+   class="text-sm text-gray-400 hover:text-indigo-700 transition-colors truncate max-w-[7rem] sm:max-w-[14rem] font-medium">
+  {{ reunion.title }}
+</a>
+{% if tab_label != "Overview" %}
+<span class="text-indigo-200 mx-2 text-xs">/</span>
+<span class="text-sm text-indigo-500">{{ tab_label }}</span>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+<!-- ── Reunion tab navigation ──────────────────────────────────────────────── -->
+<div class="mb-7 relative z-10" x-data="{ planOpen: false, runOpen: false }">
+  <div class="flex flex-wrap items-center gap-1 pb-3 border-b border-indigo-100">
+
+    <!-- Top-level tabs: Overview + Settings -->
+    {% for tab in tabs %}{% if tab.group == 0 %}
+    <a href="{% if let Some(s) = reunion.slug %}/r/{{ s }}{% if !tab.path.is_empty() %}/{{ tab.path }}{% endif %}{% else %}{% if tab.path.is_empty() %}/reunions/{{ reunion.id }}{% else %}/reunions/{{ reunion.id }}/{{ tab.path }}{% endif %}{% endif %}"
+       class="px-3 py-1.5 text-xs font-semibold transition-colors
+         {% if tab.active %}tab-active{% else %}tab-inactive{% endif %}">
+      {{ tab.label }}
+    </a>
+    {% endif %}{% endfor %}
+
+    <span class="w-px h-4 bg-indigo-100 mx-1 self-center"></span>
+
+    <!-- Setup dropdown -->
+    <div class="relative" @click.away="planOpen = false">
+      <button @click="planOpen = !planOpen"
+              class="flex items-center gap-1 px-3 py-1.5 rounded text-xs font-semibold transition-colors
+                {% for tab in tabs %}{% if tab.group == 1 && tab.path == "availability" %}{% if tab.group_has_active %}tab-group-active{% else %}tab-inactive{% endif %}{% endif %}{% endfor %}">
+        Setup
+        <svg class="w-3 h-3 transition-transform" :class="planOpen ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
+        </svg>
+      </button>
+      <div x-show="planOpen" x-cloak
+           class="absolute top-full mt-1.5 left-0 z-50 bg-white border border-indigo-100 rounded-xl shadow-picnic-lg p-1.5 min-w-[200px] max-w-[calc(100vw-2rem)]">
+        {% for tab in tabs %}{% if tab.group == 1 %}
+        <a href="{% if let Some(s) = reunion.slug %}/r/{{ s }}/{{ tab.path }}{% else %}/reunions/{{ reunion.id }}/{{ tab.path }}{% endif %}"
+           data-completion-tab="{{ tab.path }}"
+           class="flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-sm transition-colors
+             {% if tab.active %}bg-indigo-50 text-indigo-700 font-semibold{% else %}text-gray-700 hover:bg-indigo-50 hover:text-indigo-700{% endif %}">
+          <span>{{ tab.label }}</span>
+          <span class="flex items-center gap-1.5 flex-shrink-0">
+            <span class="completion-dot hidden w-2 h-2 rounded-full bg-green-400"></span>
+            <span class="progress-badge hidden text-xs tabular-nums font-medium"
+                  data-progress-tab="{{ tab.path }}"></span>
+          </span>
+        </a>
+        {% endif %}{% endfor %}
+      </div>
+    </div>
+
+    <!-- Reunion dropdown -->
+    <div class="relative" @click.away="runOpen = false">
+      <button @click="runOpen = !runOpen"
+              class="flex items-center gap-1 px-3 py-1.5 rounded text-xs font-semibold transition-colors
+                {% for tab in tabs %}{% if tab.group == 2 && tab.path == "today" %}{% if tab.group_has_active %}tab-group-active{% else %}tab-inactive{% endif %}{% endif %}{% endfor %}">
+        Reunion
+        <svg class="w-3 h-3 transition-transform" :class="runOpen ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
+        </svg>
+      </button>
+      <div x-show="runOpen" x-cloak
+           class="absolute top-full mt-1.5 right-0 z-50 bg-white border border-indigo-100 rounded-xl shadow-picnic-lg p-1.5 min-w-[180px] max-w-[calc(100vw-2rem)]">
+        {% for tab in tabs %}{% if tab.group == 2 %}
+        <a href="{% if let Some(s) = reunion.slug %}/r/{{ s }}/{{ tab.path }}{% else %}/reunions/{{ reunion.id }}/{{ tab.path }}{% endif %}"
+           class="block px-3 py-2 rounded-lg text-sm transition-colors
+             {% if tab.active %}bg-indigo-50 text-indigo-700 font-semibold{% else %}text-gray-700 hover:bg-indigo-50 hover:text-indigo-700{% endif %}">
+          {{ tab.label }}
+        </a>
+        {% endif %}{% endfor %}
+      </div>
+    </div>
+
+  </div>
+</div>
+
+{% block reunion_content %}{% endblock %}
+
+<script>
+(async () => {
+  try {
+    const [compRes, progRes] = await Promise.all([
+      fetch('/api/reunions/{{ reunion.id }}/my-completion'),
+      fetch('/api/reunions/{{ reunion.id }}/setup-progress'),
+    ]);
+    if (compRes.ok) {
+      const data = await compRes.json();
+      const map = { availability: data.availability, locations: data.locations, expenses: data.expenses, survey: data.survey };
+      document.querySelectorAll('[data-completion-tab]').forEach(el => {
+        if (map[el.dataset.completionTab]) el.querySelector('.completion-dot')?.classList.remove('hidden');
+      });
+    }
+    if (progRes.ok) {
+      const prog = await progRes.json();
+      const progMap = { availability: prog.availability, locations: prog.locations, survey: prog.survey };
+      for (const [path, counts] of Object.entries(progMap)) {
+        const el = document.querySelector(`[data-progress-tab="${path}"]`);
+        if (!el || counts.total === 0) continue;
+        el.textContent = `${counts.done}/${counts.total}`;
+        el.classList.remove('hidden');
+        el.className = el.className.replace(/text-\w+-\d+/g, '');
+        el.classList.add(counts.done === counts.total ? 'text-green-500' : 'text-gray-400');
+      }
+    }
+  } catch (_) {}
+})();
+</script>
+{% endblock %}

@@ -57,7 +57,7 @@ impl Config {
             smtp_user: env::var("SMTP_USER").unwrap_or_default(),
             smtp_password: env::var("SMTP_PASSWORD").unwrap_or_default(),
             smtp_from: env::var("SMTP_FROM")
-                .unwrap_or_else(|_| "familyer@localhost".into()),
+                .unwrap_or_else(|_| "clanplan@localhost".into()),
             smtp_tls: env::var("SMTP_TLS")
                 .unwrap_or_else(|_| "false".into())
                 .eq_ignore_ascii_case("true"),

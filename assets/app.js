@@ -73,11 +73,41 @@ async function confirmAction(message, fn) {
 function availCalendar(initialDates) {
   return {
     selected: new Set(initialDates),
-    toggle(dateStr) {
-      if (this.selected.has(dateStr)) this.selected.delete(dateStr);
-      else this.selected.add(dateStr);
-    },
+    _dragging: false,
+    _dragMode: 'add',   // 'add' | 'remove'
+
     isSelected(dateStr) { return this.selected.has(dateStr); },
+
+    // Called on mousedown / touchstart on a day cell
+    startDrag(dateStr) {
+      this._dragging = true;
+      this._dragMode = this.selected.has(dateStr) ? 'remove' : 'add';
+      this._applyDate(dateStr);
+    },
+    // Called on mouseenter while dragging
+    applyDrag(dateStr) {
+      if (this._dragging) this._applyDate(dateStr);
+    },
+    stopDrag() { this._dragging = false; },
+
+    _applyDate(dateStr) {
+      if (this._dragMode === 'add') this.selected.add(dateStr);
+      else this.selected.delete(dateStr);
+    },
+
+    // Attach non-passive touchmove so we can prevent scroll mid-drag
+    init() {
+      const self = this;
+      this.$el.addEventListener('touchmove', function(e) {
+        if (!self._dragging) return;
+        e.preventDefault();
+        const t = e.touches[0];
+        const el = document.elementFromPoint(t.clientX, t.clientY);
+        const d = el?.dataset?.date;
+        if (d) self._applyDate(d);
+      }, { passive: false });
+    },
+
     async save(reunionId) {
       try {
         await apiFetch('PUT', `/reunions/${reunionId}/availability/me`,
@@ -90,11 +120,14 @@ function availCalendar(initialDates) {
   };
 }
 
-// ── Location vote ─────────────────────────────────────────────────────────────
-async function voteLocation(reunionId, locId, score) {
+// ── Location vote + comment ───────────────────────────────────────────────────
+async function saveLocationVote(reunionId, locId) {
+  const score   = parseInt(document.getElementById(`vote-loc-${locId}`).value);
+  const rawComment = document.getElementById(`vote-comment-${locId}`).value.trim();
+  const comment = rawComment.length > 0 ? rawComment : null;
   try {
-    await apiFetch('PUT', `/reunions/${reunionId}/locations/${locId}/vote`, { score, comment: null });
-    window.location.reload();
+    await apiFetch('PUT', `/reunions/${reunionId}/locations/${locId}/vote`, { score, comment });
+    showToast('Vote saved!', 'success');
   } catch (e) {
     showToast(e.message, 'error');
   }
@@ -141,32 +174,116 @@ async function voteActivity(reunionId, actId, score) {
 }
 
 // ── Today-view SSE ────────────────────────────────────────────────────────────
-function startTodaySSE(reunionId) {
+let _lastTodayBlocks = null;
+let _todayUse24h = localStorage.getItem('todayUse24h') === 'true';
+
+/** Format "HH:MM[:SS]" as "H:MM AM/PM" (or keep 24h if flag set). */
+function fmtTime(t) {
+  if (_todayUse24h) return t.slice(0, 5);
+  const [h, m] = t.split(':').map(Number);
+  const period = h >= 12 ? 'PM' : 'AM';
+  const h12 = h % 12 || 12;
+  return `${h12}:${String(m).padStart(2, '0')} ${period}`;
+}
+
+/** Called by the 24h checkbox; persists preference and re-renders cached data. */
+function toggle24h(checked) {
+  _todayUse24h = checked;
+  localStorage.setItem('todayUse24h', String(checked));
+  if (_lastTodayBlocks) {
+    const container = document.getElementById('today-content');
+    if (container) renderTodaySnapshot(_lastTodayBlocks.blocks || [], container, _lastTodayStartDate);
+  }
+}
+
+/** Initialise the 24h checkbox state from stored preference. */
+function initTodayCheckbox() {
+  const cb = document.getElementById('use24h');
+  if (cb) cb.checked = _todayUse24h;
+}
+
+let _lastTodayStartDate = null;
+
+/**
+ * Start the today-view SSE stream.
+ *
+ * opts:
+ *   oneShot   {boolean} — close the EventSource after the first successful
+ *                         message (use on the overview page; /today keeps it live).
+ *   startDate {string|null} — YYYY-MM-DD reunion start date, used to show a
+ *                             contextual message when there are no events today.
+ */
+function startTodaySSE(reunionId, opts = {}) {
   const container = document.getElementById('today-content');
   if (!container) return;
+
+  const oneShot   = opts.oneShot   ?? false;
+  const startDate = opts.startDate ?? null;
+  _lastTodayStartDate = startDate;
+
+  let received = false;
+
+  function showEmpty() {
+    const today = new Date().toISOString().slice(0, 10);
+    let msg = 'No events scheduled for today.';
+    if (startDate && today < startDate) {
+      msg = 'Reunion hasn\'t started yet — the schedule will appear here on the first day.';
+    }
+    container.innerHTML =
+      `<p class="text-sm text-center py-6" style="color:var(--muted)">${msg}</p>`;
+  }
+
+  // Safety net: if no data arrives within 6 s, resolve the spinner rather than
+  // hanging indefinitely (covers auth errors, network hiccups, empty schedules).
+  const fallbackTimer = setTimeout(() => {
+    if (!received) showEmpty();
+  }, 6000);
+
   const es = new EventSource(`/api/reunions/${reunionId}/today`);
+
   es.onmessage = (e) => {
+    received = true;
+    clearTimeout(fallbackTimer);
     try {
       const data = JSON.parse(e.data);
-      renderTodaySnapshot(data, container);
+      _lastTodayBlocks = data;
+      renderTodaySnapshot(data.blocks || [], container, startDate);
     } catch (err) {
       console.error('SSE parse error', err);
+      showEmpty();
     }
+    // Overview only needs a static snapshot; close to avoid a persistent
+    // open connection on a page that doesn't benefit from live updates.
+    if (oneShot) es.close();
   };
+
   es.onerror = () => {
-    console.warn('SSE connection lost, reconnecting...');
+    // On any error: stop the fallback race, resolve the UI immediately, and —
+    // for one-shot callers — close the EventSource to prevent the browser's
+    // automatic infinite-reconnect loop from keeping the page in a broken state.
+    clearTimeout(fallbackTimer);
+    if (!received) showEmpty();
+    if (oneShot) es.close();
   };
+
+  return es;
 }
 
 // Initialise theme as soon as app.js is parsed (bottom of <body>)
 initTheme();
 
-function renderTodaySnapshot(blocks, container) {
+function renderTodaySnapshot(blocks, container, startDate = null) {
   const now = new Date();
   const nowMins = now.getHours() * 60 + now.getMinutes();
 
   if (!blocks.length) {
-    container.innerHTML = '<p class="text-gray-500 text-center py-8">No events scheduled for today.</p>';
+    const today = now.toISOString().slice(0, 10);
+    let msg = 'No events scheduled for today.';
+    if (startDate && today < startDate) {
+      msg = 'Reunion hasn\'t started yet — the schedule will appear here on the first day.';
+    }
+    container.innerHTML =
+      `<p class="text-sm text-center py-6" style="color:var(--muted)">${msg}</p>`;
     return;
   }
 
@@ -195,7 +312,7 @@ function renderTodaySnapshot(blocks, container) {
           ${slots}
         </div>
         <div class="text-sm text-gray-500 whitespace-nowrap ml-4">
-          ${b.start_time.slice(0,5)} – ${b.end_time.slice(0,5)}
+          ${fmtTime(b.start_time)} – ${fmtTime(b.end_time)}
           ${isCurrent ? '<span class="ml-1 text-amber-600 font-semibold">● Now</span>' : ''}
         </div>
       </div>

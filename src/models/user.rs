@@ -59,8 +59,8 @@ impl User {
     }
 
     /// True when the user can act as RA for the given reunion.
-    pub fn is_ra_for(&self, reunion_responsible_admin_id: Option<Uuid>) -> bool {
-        self.is_sysadmin() || reunion_responsible_admin_id == Some(self.id)
+    pub fn is_ra_for(&self, ra_ids: &[Uuid]) -> bool {
+        self.is_sysadmin() || ra_ids.contains(&self.id)
     }
 }
 
@@ -417,18 +417,17 @@ mod tests {
     }
 
     #[test]
-    fn ra_check() {
+    fn is_ra_for_checks_id() {
         let user = make_user(UserRole::Member, false);
-        let reunion_admin_id = Some(user.id);
-        let other_id = Some(Uuid::new_v4());
+        let other_id = Uuid::new_v4();
 
-        assert!(user.is_ra_for(reunion_admin_id));
-        assert!(!user.is_ra_for(other_id));
-        assert!(!user.is_ra_for(None));
+        assert!(user.is_ra_for(&[user.id]));
+        assert!(!user.is_ra_for(&[other_id]));
+        assert!(!user.is_ra_for(&[]));
 
         // Sysadmin is always RA
         let sysadmin = make_user(UserRole::Sysadmin, false);
-        assert!(sysadmin.is_ra_for(None));
-        assert!(sysadmin.is_ra_for(other_id));
+        assert!(sysadmin.is_ra_for(&[]));
+        assert!(sysadmin.is_ra_for(&[other_id]));
     }
 }

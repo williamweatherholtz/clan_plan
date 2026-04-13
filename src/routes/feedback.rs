@@ -25,8 +25,8 @@ pub async fn list_feedback(
     State(state): State<AppState>,
     Path(reunion_id): Path<Uuid>,
 ) -> AppResult<impl IntoResponse> {
-    let reunion = load_reunion(&state, reunion_id).await?;
-    ensure_ra(&user, &reunion)?;
+    load_reunion(&state, reunion_id).await?;
+    ensure_ra(&user, &state, reunion_id).await?;
 
     let items = Feedback::list_for_reunion(state.db(), reunion_id).await?;
     Ok(Json(items))
@@ -85,8 +85,8 @@ pub async fn create_survey_question(
     Path(reunion_id): Path<Uuid>,
     Json(body): Json<NewSurveyQuestion>,
 ) -> AppResult<impl IntoResponse> {
-    let reunion = load_reunion(&state, reunion_id).await?;
-    ensure_ra(&user, &reunion)?;
+    load_reunion(&state, reunion_id).await?;
+    ensure_ra(&user, &state, reunion_id).await?;
 
     if body.question_text.trim().is_empty() {
         return Err(AppError::BadRequest("question_text cannot be empty".into()));
@@ -104,43 +104,78 @@ pub async fn delete_survey_question(
     State(state): State<AppState>,
     Path((reunion_id, q_id)): Path<(Uuid, Uuid)>,
 ) -> AppResult<StatusCode> {
-    let reunion = load_reunion(&state, reunion_id).await?;
-    ensure_ra(&user, &reunion)?;
+    load_reunion(&state, reunion_id).await?;
+    ensure_ra(&user, &state, reunion_id).await?;
 
     SurveyQuestion::delete(state.db(), q_id).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
-// ── PUT /reunions/:id/survey/questions/:q_id/response ─────────────────────────
-// Any member — upserts their own answer to a survey question.
+// ── POST /reunions/:id/survey/questions/:q_id/responses ───────────────────────
+// Any member — appends a new response to a survey question (no phase gate).
 
 #[derive(Deserialize)]
 pub struct SurveyResponseRequest {
     pub response_text: String,
 }
 
-pub async fn upsert_survey_response(
+pub async fn create_survey_response(
     user: CurrentUser,
     State(state): State<AppState>,
     Path((reunion_id, q_id)): Path<(Uuid, Uuid)>,
     Json(body): Json<SurveyResponseRequest>,
 ) -> AppResult<impl IntoResponse> {
-    let reunion = load_reunion(&state, reunion_id).await?;
-
-    if !matches!(reunion.phase, Phase::PostReunion | Phase::Archived) {
-        return Err(AppError::WrongPhase {
-            required: "post_reunion or archived".into(),
-            current: reunion.phase.label().into(),
-        });
-    }
+    load_reunion(&state, reunion_id).await?;
 
     if body.response_text.trim().is_empty() {
         return Err(AppError::BadRequest("response_text cannot be empty".into()));
     }
 
     let response =
-        SurveyResponse::upsert(state.db(), q_id, user.id, body.response_text.trim()).await?;
-    Ok(Json(response))
+        SurveyResponse::create(state.db(), q_id, user.id, body.response_text.trim()).await?;
+    Ok((StatusCode::CREATED, Json(response)))
+}
+
+// ── PATCH /reunions/:id/survey/questions/:q_id/responses/:r_id ────────────────
+// Owner only — edit the text of an existing response.
+
+pub async fn update_survey_response(
+    user: CurrentUser,
+    State(state): State<AppState>,
+    Path((reunion_id, _q_id, r_id)): Path<(Uuid, Uuid, Uuid)>,
+    Json(body): Json<SurveyResponseRequest>,
+) -> AppResult<impl IntoResponse> {
+    load_reunion(&state, reunion_id).await?;
+
+    if body.response_text.trim().is_empty() {
+        return Err(AppError::BadRequest("response_text cannot be empty".into()));
+    }
+
+    let updated =
+        SurveyResponse::update(state.db(), r_id, user.id, body.response_text.trim()).await?;
+
+    match updated {
+        Some(r) => Ok(Json(r).into_response()),
+        None => Err(AppError::Forbidden),
+    }
+}
+
+// ── DELETE /reunions/:id/survey/questions/:q_id/responses/:r_id ───────────────
+// Owner only — delete one of their own responses.
+
+pub async fn delete_survey_response(
+    user: CurrentUser,
+    State(state): State<AppState>,
+    Path((reunion_id, _q_id, r_id)): Path<(Uuid, Uuid, Uuid)>,
+) -> AppResult<StatusCode> {
+    load_reunion(&state, reunion_id).await?;
+
+    let deleted = SurveyResponse::delete(state.db(), r_id, user.id).await?;
+    if deleted {
+        Ok(StatusCode::NO_CONTENT)
+    } else {
+        Err(AppError::Forbidden)
+    }
 }
 
 // ── GET /reunions/:id/survey/responses ────────────────────────────────────────
@@ -158,8 +193,8 @@ pub async fn list_survey_responses(
     State(state): State<AppState>,
     Path(reunion_id): Path<Uuid>,
 ) -> AppResult<impl IntoResponse> {
-    let reunion = load_reunion(&state, reunion_id).await?;
-    ensure_ra(&user, &reunion)?;
+    load_reunion(&state, reunion_id).await?;
+    ensure_ra(&user, &state, reunion_id).await?;
 
     let questions = SurveyQuestion::list_for_reunion(state.db(), reunion_id).await?;
     let all_responses = SurveyResponse::list_for_reunion(state.db(), reunion_id).await?;

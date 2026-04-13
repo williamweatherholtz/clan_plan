@@ -1,13 +1,14 @@
 services:
 
   app:
+    image: ${APP_IMAGE:-clanplan:latest}
     build: .
     ports:
       - "${APP_PORT:-8080}:8080"
     env_file: .env
     environment:
       # Override DB host to use the compose service name
-      DATABASE_URL: postgres://familyer:${POSTGRES_PASSWORD:-familyer}@db:5432/familyer
+      DATABASE_URL: postgres://clanplan:${POSTGRES_PASSWORD:-clanplan}@db:5432/clanplan
       MEDIA_STORAGE_PATH: /data/media
     volumes:
       - media_data:/data/media
@@ -19,13 +20,15 @@ services:
   db:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: familyer
-      POSTGRES_USER: familyer
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-familyer}
+      POSTGRES_DB: clanplan
+      POSTGRES_USER: clanplan
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-clanplan}
+    ports:
+      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U familyer -d familyer"]
+      test: ["CMD-SHELL", "pg_isready -U clanplan -d clanplan"]
       interval: 5s
       timeout: 5s
       retries: 10

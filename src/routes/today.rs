@@ -6,7 +6,8 @@ use axum::{
         IntoResponse, Sse,
     },
 };
-use chrono::Local;
+use chrono::Utc;
+use chrono_tz::Tz;
 use serde::Serialize;
 use std::{convert::Infallible, time::Duration};
 use tokio_stream::{wrappers::IntervalStream, StreamExt as _};
@@ -20,7 +21,7 @@ use crate::{
 };
 
 use super::{
-    helpers::load_reunion,
+    helpers::{get_reunion_tz_string, load_reunion},
     schedule::{BlockWithSlots, SlotWithSignups},
 };
 
@@ -40,14 +41,15 @@ pub async fn get_today(
     State(state): State<AppState>,
     Path(reunion_id): Path<Uuid>,
 ) -> AppResult<impl IntoResponse> {
-    // Validate the reunion exists before opening the stream
-    load_reunion(&state, reunion_id).await?;
+    let reunion = load_reunion(&state, reunion_id).await?;
+    let tz_str = get_reunion_tz_string(&state, &reunion).await;
+    let tz: Tz = tz_str.parse().unwrap_or(chrono_tz::UTC);
 
     let interval = tokio::time::interval(Duration::from_secs(30));
     let stream = IntervalStream::new(interval).then(move |_| {
         let state = state.clone();
         async move {
-            let data = match build_snapshot(&state, reunion_id).await {
+            let data = match build_snapshot(&state, reunion_id, tz).await {
                 Ok(snap) => serde_json::to_string(&snap).unwrap_or_default(),
                 Err(e) => {
                     tracing::error!("today-view SSE error for reunion {reunion_id}: {e:?}");
@@ -74,9 +76,10 @@ pub async fn get_ics(
 ) -> AppResult<impl IntoResponse> {
     let reunion = load_reunion(&state, reunion_id).await?;
     let blocks = ScheduleBlock::list_for_reunion(state.db(), reunion_id).await?;
+    let tz_str = get_reunion_tz_string(&state, &reunion).await;
 
-    let mut ics = String::from(
-        "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//familyer//EN\r\nCALSCALE:GREGORIAN\r\n",
+    let mut ics = format!(
+        "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//clanplan//EN\r\nCALSCALE:GREGORIAN\r\nX-WR-TIMEZONE:{tz_str}\r\n",
     );
 
     for block in &blocks {
@@ -91,9 +94,9 @@ pub async fn get_ics(
 
         ics.push_str(&format!(
             "BEGIN:VEVENT\r\n\
-             UID:{id}@familyer\r\n\
-             DTSTART:{dtstart}\r\n\
-             DTEND:{dtend}\r\n\
+             UID:{id}@clanplan\r\n\
+             DTSTART;TZID={tz_str}:{dtstart}\r\n\
+             DTEND;TZID={tz_str}:{dtend}\r\n\
              SUMMARY:{summary}\r\n\
              DESCRIPTION:{desc}\r\n\
              END:VEVENT\r\n",
@@ -122,8 +125,8 @@ pub async fn get_ics(
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-async fn build_snapshot(state: &AppState, reunion_id: Uuid) -> crate::error::AppResult<TodaySnapshot> {
-    let today = Local::now().date_naive();
+async fn build_snapshot(state: &AppState, reunion_id: Uuid, tz: Tz) -> crate::error::AppResult<TodaySnapshot> {
+    let today = Utc::now().with_timezone(&tz).date_naive();
     let all_blocks = ScheduleBlock::list_for_reunion(state.db(), reunion_id).await?;
     let mut result = Vec::new();
 

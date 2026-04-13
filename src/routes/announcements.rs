@@ -10,7 +10,7 @@ use crate::{
     auth::session::CurrentUser,
     error::{AppError, AppResult},
     models::{
-        announcement::{Announcement, NewAnnouncement, Notification},
+        announcement::{Announcement, NewAnnouncement},
         user::User,
     },
     state::AppState,
@@ -40,7 +40,7 @@ pub async fn create_announcement(
     Json(body): Json<NewAnnouncement>,
 ) -> AppResult<impl IntoResponse> {
     let reunion = load_reunion(&state, reunion_id).await?;
-    ensure_ra(&user, &reunion)?;
+    ensure_ra(&user, &state, reunion_id).await?;
 
     if body.title.trim().is_empty() {
         return Err(AppError::BadRequest("title cannot be empty".into()));
@@ -93,43 +93,13 @@ pub async fn delete_announcement(
     State(state): State<AppState>,
     Path((reunion_id, ann_id)): Path<(Uuid, Uuid)>,
 ) -> AppResult<StatusCode> {
-    let reunion = load_reunion(&state, reunion_id).await?;
-    ensure_ra(&user, &reunion)?;
+    load_reunion(&state, reunion_id).await?;
+    ensure_ra(&user, &state, reunion_id).await?;
 
     Announcement::delete(state.db(), ann_id).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
-// ── GET /me/notifications ─────────────────────────────────────────────────────
-
-pub async fn list_notifications(
-    user: CurrentUser,
-    State(state): State<AppState>,
-) -> AppResult<impl IntoResponse> {
-    let notifications = Notification::list_unread(state.db(), user.id).await?;
-    Ok(Json(notifications))
-}
-
-// ── POST /me/notifications/:notif_id/read ─────────────────────────────────────
-
-pub async fn mark_notification_read(
-    user: CurrentUser,
-    State(state): State<AppState>,
-    Path(notif_id): Path<Uuid>,
-) -> AppResult<StatusCode> {
-    Notification::mark_read(state.db(), notif_id, user.id).await?;
-    Ok(StatusCode::NO_CONTENT)
-}
-
-// ── POST /me/notifications/read-all ───────────────────────────────────────────
-
-pub async fn mark_all_notifications_read(
-    user: CurrentUser,
-    State(state): State<AppState>,
-) -> AppResult<impl IntoResponse> {
-    let count = Notification::mark_all_read(state.db(), user.id).await?;
-    Ok(Json(serde_json::json!({ "marked_read": count })))
-}
 
 #[cfg(test)]
 mod tests {

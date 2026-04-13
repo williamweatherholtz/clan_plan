@@ -1,0 +1,261 @@
+{% extends "layout_reunion.html" %}
+
+{% block title %}Settings — {{ reunion.title }}{% endblock %}
+
+{% block reunion_content %}
+<div class="max-w-2xl space-y-6">
+
+  <!-- Reunion details -->
+  <div class="card p-5">
+    <h2 class="text-base font-semibold text-gray-800 mb-4">Reunion Details</h2>
+    <form id="details-form" class="space-y-4">
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Title</label>
+        <input id="settings-title" type="text" value="{{ reunion.title }}"
+               class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Description</label>
+        <textarea id="settings-desc" rows="3"
+                  class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">{% if let Some(d) = reunion.description %}{{ d }}{% endif %}</textarea>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">
+          Short URL slug
+          <span class="font-normal text-gray-400 ml-1">(optional — enables /r/your-slug)</span>
+        </label>
+        <div class="flex items-center gap-2">
+          <span class="text-sm text-gray-400">/r/</span>
+          <input id="settings-slug" type="text"
+                 value="{% if let Some(s) = reunion.slug %}{{ s }}{% endif %}"
+                 placeholder="e.g. weatherholtz-2026"
+                 class="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
+        </div>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">
+          Assumed activity duration
+          <span class="font-normal text-gray-400 ml-1">(minutes, used when no explicit duration is set)</span>
+        </label>
+        <input id="settings-duration" type="number" min="1"
+               value="{{ reunion.default_activity_duration_minutes }}"
+               class="w-32 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
+      </div>
+      <div class="flex justify-end">
+        <button type="submit"
+                class="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold rounded-lg">
+          Save changes
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Reunion dates -->
+  <div class="card p-5">
+    <h2 class="text-base font-semibold text-gray-800 mb-4">Reunion Dates</h2>
+    <form id="dates-form" class="space-y-4">
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Start date</label>
+          <input id="settings-start" type="date"
+                 value="{% if let Some(rd) = reunion_date %}{{ rd.start_date }}{% endif %}"
+                 class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">End date</label>
+          <input id="settings-end" type="date"
+                 value="{% if let Some(rd) = reunion_date %}{{ rd.end_date }}{% endif %}"
+                 class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
+        </div>
+      </div>
+      <div class="flex justify-end">
+        <button type="submit"
+                class="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold rounded-lg">
+          Set dates
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Phase control -->
+  <div class="card p-5">
+    <h2 class="text-base font-semibold text-gray-800 mb-1">Phase</h2>
+    <p class="text-sm text-gray-500 mb-3">Current phase: <strong class="text-gray-700">{{ reunion.phase.label() }}</strong></p>
+    {% if reunion.phase.label() != "Archived" %}
+    <div class="flex items-center gap-2">
+      {% if let Some(prev_p) = reunion.phase.prev() %}
+      <button onclick="apiFetch('POST','/reunions/{{ reunion.id }}/retreat-phase').then(()=>location.reload()).catch(e=>showToast(e.message,'error'))"
+              class="px-3 py-2 text-sm font-medium text-amber-700 border border-amber-300 rounded-lg hover:bg-amber-100 transition-colors">
+        ← {{ prev_p.label() }}
+      </button>
+      {% endif %}
+      {% if let Some(next_p) = reunion.phase.next() %}
+      <button onclick="apiFetch('POST','/reunions/{{ reunion.id }}/advance-phase').then(()=>location.reload()).catch(e=>showToast(e.message,'error'))"
+              class="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold rounded-lg transition-colors">
+        {{ next_p.label() }} →
+      </button>
+      {% endif %}
+    </div>
+    {% else %}
+    <p class="text-sm text-gray-400 italic">This reunion is archived.</p>
+    {% endif %}
+  </div>
+
+  <!-- Participating family units -->
+  {% if !family_units.is_empty() %}
+  <div class="card p-5">
+    <h2 class="text-base font-semibold text-gray-800 mb-1">Participating Families</h2>
+    <p class="text-sm text-gray-500 mb-4">Select which family units are part of this reunion. Progress tracking and vote weighting use this list.</p>
+    <div class="space-y-2">
+      {% for fu in family_units %}
+      <label class="flex items-center gap-3 cursor-pointer">
+        <input type="checkbox"
+               id="fu-{{ fu.id }}"
+               value="{{ fu.id }}"
+               {% if fu.enrolled %}checked{% endif %}
+               onchange="toggleFamilyUnit('{{ fu.id }}', this.checked)"
+               class="w-4 h-4 rounded border-gray-300 text-amber-500 focus:ring-amber-400">
+        <span class="text-sm text-gray-700">{{ fu.name }}</span>
+      </label>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Responsible Admin assignment (sysadmin only) -->
+  {% if is_sysadmin %}
+  <div class="card p-5">
+    <h2 class="text-base font-semibold text-gray-800 mb-1">Responsible Admins</h2>
+    <p class="text-sm text-gray-500 mb-4">
+      These users can manage this reunion. RA access is per-person — select any combination from your members.
+    </p>
+    <div class="space-y-2">
+      {% for u in all_users_with_ra %}
+      <label class="flex items-center gap-3 cursor-pointer">
+        <input type="checkbox"
+               id="ra-{{ u.id }}"
+               value="{{ u.id }}"
+               {% if u.is_ra %}checked{% endif %}
+               onchange="toggleRA('{{ u.id }}', this.checked)"
+               class="w-4 h-4 rounded border-gray-300 text-amber-500 focus:ring-amber-400">
+        <span class="text-sm text-gray-700">{{ u.display_name }}
+          <span class="text-gray-400 text-xs">({{ u.email }})</span>
+        </span>
+      </label>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Danger zone -->
+  <div class="bg-white rounded-xl border border-red-100 shadow-sm p-5">
+    <h2 class="text-base font-semibold text-red-700 mb-3">Danger Zone</h2>
+    <div class="flex flex-wrap gap-3">
+      {% if reunion.phase.label() == "Archived" %}
+      <button onclick="unarchiveReunion('{{ reunion.id }}')"
+              class="px-4 py-2 text-sm font-medium text-green-700 border border-green-300 rounded-lg hover:bg-green-50">
+        Restore from archive
+      </button>
+      {% else %}
+      {% if is_sysadmin %}
+      <button onclick="archiveReunion('{{ reunion.id }}')"
+              class="px-4 py-2 text-sm font-medium text-amber-700 border border-amber-300 rounded-lg hover:bg-amber-50">
+        Archive reunion
+      </button>
+      {% endif %}
+      {% endif %}
+      {% if is_sysadmin %}
+      <button onclick="deleteReunion('{{ reunion.id }}')"
+              class="px-4 py-2 text-sm font-medium text-red-600 border border-red-200 rounded-lg hover:bg-red-50">
+        Delete permanently
+      </button>
+      {% endif %}
+    </div>
+    <p class="mt-3 text-xs text-gray-400">Archiving hides the reunion from the main dashboard. Deletion is permanent.</p>
+  </div>
+
+</div>
+
+<script>
+document.getElementById('details-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const durationVal = document.getElementById('settings-duration').value;
+  const payload = {
+    title: document.getElementById('settings-title').value,
+    description: document.getElementById('settings-desc').value || null,
+    slug: document.getElementById('settings-slug').value,
+  };
+  if (durationVal) payload.default_activity_duration_minutes = parseInt(durationVal, 10);
+  try {
+    await apiFetch('PATCH', '/reunions/{{ reunion.id }}', payload);
+    showToast('Saved', 'success');
+  } catch (err) { showToast(err.message, 'error'); }
+});
+
+document.getElementById('dates-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const start = document.getElementById('settings-start').value;
+  const end   = document.getElementById('settings-end').value;
+  if (!start || !end) { showToast('Both dates are required', 'error'); return; }
+  try {
+    await apiFetch('POST', '/reunions/{{ reunion.id }}/dates', {
+      start_date: start,
+      end_date: end,
+    });
+    showToast('Dates saved', 'success');
+  } catch (err) { showToast(err.message, 'error'); }
+});
+
+async function archiveReunion(id) {
+  if (!confirm('Archive this reunion? It will be read-only.')) return;
+  try {
+    await apiFetch('POST', '/admin/reunions/' + id + '/set-phase', { phase: 'archived' });
+    showToast('Reunion archived', 'success');
+    setTimeout(() => window.location.href = '/dashboard', 1200);
+  } catch (err) { showToast(err.message, 'error'); }
+}
+
+async function deleteReunion(id) {
+  if (!confirm('Permanently delete this reunion and ALL its data? This cannot be undone.')) return;
+  if (!confirm('Are you absolutely sure? All photos, expenses, and announcements will be gone forever.')) return;
+  try {
+    await apiFetch('DELETE', '/reunions/' + id);
+    showToast('Reunion deleted', 'success');
+    setTimeout(() => window.location.href = '/dashboard', 1200);
+  } catch (err) { showToast(err.message, 'error'); }
+}
+
+async function toggleFamilyUnit(fuId, add) {
+  try {
+    if (add) {
+      await apiFetch('PUT', `/reunions/{{ reunion.id }}/family-units/${fuId}`, null);
+      showToast('Family added', 'success');
+    } else {
+      await apiFetch('DELETE', `/reunions/{{ reunion.id }}/family-units/${fuId}`, null);
+      showToast('Family removed', 'success');
+    }
+  } catch (err) {
+    showToast(err.message, 'error');
+    // Revert checkbox on failure
+    const cb = document.getElementById('fu-' + fuId);
+    if (cb) cb.checked = !add;
+  }
+}
+
+async function toggleRA(userId, add) {
+  try {
+    if (add) {
+      await apiFetch('PUT', `/reunions/{{ reunion.id }}/admins/${userId}`, null);
+      showToast('RA added', 'success');
+    } else {
+      await apiFetch('DELETE', `/reunions/{{ reunion.id }}/admins/${userId}`, null);
+      showToast('RA removed', 'success');
+    }
+  } catch (err) {
+    showToast(err.message, 'error');
+    const cb = document.getElementById('ra-' + userId);
+    if (cb) cb.checked = !add;
+  }
+}
+</script>
+{% endblock %}

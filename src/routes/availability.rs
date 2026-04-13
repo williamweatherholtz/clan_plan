@@ -65,8 +65,8 @@ pub async fn get_heatmap(
     State(state): State<AppState>,
     Path(reunion_id): Path<Uuid>,
 ) -> AppResult<impl IntoResponse> {
-    let reunion = load_reunion(&state, reunion_id).await?;
-    ensure_ra(&user, &reunion)?;
+    load_reunion(&state, reunion_id).await?;
+    ensure_ra(&user, &state, reunion_id).await?;
 
     let heatmap = Availability::heatmap(state.db(), reunion_id).await?;
     let respondent_count = Availability::respondent_count(state.db(), reunion_id).await?;

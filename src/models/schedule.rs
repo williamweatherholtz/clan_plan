@@ -17,8 +17,6 @@ pub enum BlockType {
     Optional,
     /// A meal event (inherits group/optional from context; RA decides).
     Meal,
-    /// Arrival or departure block.
-    Travel,
 }
 
 impl BlockType {
@@ -27,7 +25,6 @@ impl BlockType {
             BlockType::Group => "#3B82F6",    // blue
             BlockType::Optional => "#22C55E", // green
             BlockType::Meal => "#F59E0B",     // amber
-            BlockType::Travel => "#8B5CF6",   // violet
         }
     }
 
@@ -40,7 +37,6 @@ impl BlockType {
             BlockType::Group => "group",
             BlockType::Optional => "optional",
             BlockType::Meal => "meal",
-            BlockType::Travel => "travel",
         }
     }
 }
@@ -330,17 +326,11 @@ mod tests {
         assert!(BlockType::Group.is_attendance_expected());
         assert!(BlockType::Meal.is_attendance_expected());
         assert!(!BlockType::Optional.is_attendance_expected());
-        assert!(!BlockType::Travel.is_attendance_expected());
     }
 
     #[test]
     fn all_block_types_have_colors() {
-        for bt in [
-            BlockType::Group,
-            BlockType::Optional,
-            BlockType::Meal,
-            BlockType::Travel,
-        ] {
+        for bt in [BlockType::Group, BlockType::Optional, BlockType::Meal] {
             assert!(!bt.color().is_empty());
         }
     }

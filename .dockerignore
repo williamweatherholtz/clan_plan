@@ -1,0 +1,19 @@
+# Rust build artifacts — largest dir, no value in image context
+target/
+
+# Node deps — rebuilt inside image if needed, not needed since tailwind.css is pre-built
+node_modules/
+
+# User-uploaded media — never bake into the image
+media/
+
+# Local secrets — image must get these from env/secrets at runtime
+.env
+.env.*
+
+# Git history
+.git/
+.gitignore
+
+# Dev tooling
+.sqlx/

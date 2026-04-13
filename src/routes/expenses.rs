@@ -66,8 +66,8 @@ pub async fn delete_expense(
     State(state): State<AppState>,
     Path((reunion_id, exp_id)): Path<(Uuid, Uuid)>,
 ) -> AppResult<StatusCode> {
-    let reunion = load_reunion(&state, reunion_id).await?;
-    ensure_ra(&user, &reunion)?;
+    load_reunion(&state, reunion_id).await?;
+    ensure_ra(&user, &state, reunion_id).await?;
 
     let expense = Expense::find_by_id(state.db(), exp_id).await?;
     if expense.reunion_id != reunion_id {
@@ -123,6 +123,44 @@ pub async fn get_balances_csv(
     Ok((StatusCode::OK, headers, csv))
 }
 
+// ── POST /reunions/:id/expenses/confirm ──────────────────────────────────────
+// Any member marks their own expense entries as complete for this reunion.
+
+pub async fn confirm_expenses(
+    user: CurrentUser,
+    State(state): State<AppState>,
+    Path(reunion_id): Path<Uuid>,
+) -> AppResult<StatusCode> {
+    load_reunion(&state, reunion_id).await?;
+    sqlx::query(
+        "INSERT INTO expense_confirmations (reunion_id, user_id)
+         VALUES ($1, $2)
+         ON CONFLICT (reunion_id, user_id) DO NOTHING",
+    )
+    .bind(reunion_id)
+    .bind(user.id)
+    .execute(state.db())
+    .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+// ── DELETE /reunions/:id/expenses/confirm ─────────────────────────────────────
+
+pub async fn unconfirm_expenses(
+    user: CurrentUser,
+    State(state): State<AppState>,
+    Path(reunion_id): Path<Uuid>,
+) -> AppResult<StatusCode> {
+    sqlx::query(
+        "DELETE FROM expense_confirmations WHERE reunion_id = $1 AND user_id = $2",
+    )
+    .bind(reunion_id)
+    .bind(user.id)
+    .execute(state.db())
+    .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 #[cfg(test)]
 mod tests {
     use crate::models::expense::NewExpense;
@@ -138,7 +176,7 @@ mod tests {
         );
         let req: NewExpense = serde_json::from_str(&json).unwrap();
         assert_eq!(req.amount_cents, 5000);
-        assert_eq!(req.expense_date, NaiveDate::from_ymd_opt(2026, 7, 12).unwrap());
+        assert_eq!(req.expense_date, Some(NaiveDate::from_ymd_opt(2026, 7, 12).unwrap()));
     }
 
     #[test]

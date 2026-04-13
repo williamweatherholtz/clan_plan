@@ -54,12 +54,12 @@ impl Mailer {
     ) -> anyhow::Result<()> {
         let body = format!(
             "Hi {display_name},\n\n\
-             Please verify your email address to activate your Familyer account:\n\n\
+             Please verify your email address to activate your Clan Plan account:\n\n\
              {verify_url}\n\n\
              This link expires in 24 hours.\n\n\
              If you did not create an account, you can safely ignore this email."
         );
-        self.send(to_email, "Verify your Familyer account", &body).await
+        self.send(to_email, "Verify your Clan Plan account", &body).await
     }
 
     pub async fn send_password_reset_email(
@@ -70,13 +70,13 @@ impl Mailer {
     ) -> anyhow::Result<()> {
         let body = format!(
             "Hi {display_name},\n\n\
-             A password reset was requested for your Familyer account.\n\n\
+             A password reset was requested for your Clan Plan account.\n\n\
              Click the link below to set a new password:\n\n\
              {reset_url}\n\n\
              This link expires in 1 hour. If you did not request a reset, \
              you can safely ignore this email — your password has not changed."
         );
-        self.send(to_email, "Reset your Familyer password", &body).await
+        self.send(to_email, "Reset your Clan Plan password", &body).await
     }
 
     pub async fn send_announcement_email(
@@ -94,7 +94,7 @@ impl Mailer {
              {announcement_title}\n\
              {}\n\n\
              {announcement_content}\n\n\
-             Visit Familyer:\n{app_url}\n",
+             Visit Clan Plan:\n{app_url}\n",
             "─".repeat(announcement_title.len())
         );
         self.send(
@@ -116,7 +116,7 @@ impl Mailer {
         let body = format!(
             "Hi {display_name},\n\n\
              The reunion \"{reunion_title}\" has moved to a new phase: {phase_label}.\n\n\
-             Visit Familyer to see what's next:\n\n\
+             Visit Clan Plan to see what's next:\n\n\
              {app_url}\n"
         );
         self.send(

@@ -17,6 +17,8 @@ pub struct LocationCandidate {
     /// Stored in cents to avoid floating-point issues.
     pub estimated_cost_cents: Option<i32>,
     pub image_path: Option<String>,
+    /// IANA timezone identifier, e.g. "America/New_York".
+    pub timezone: String,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -50,6 +52,14 @@ pub struct LocationVoteView {
     pub comment: Option<String>,
 }
 
+/// Vote enriched with the voter's display name (RA-only view).
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct VoteWithName {
+    pub display_name: String,
+    pub score: i16,
+    pub comment: Option<String>,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct NewLocationCandidate {
     pub title: String,
@@ -57,6 +67,8 @@ pub struct NewLocationCandidate {
     pub external_url: Option<String>,
     pub capacity: Option<i32>,
     pub estimated_cost_cents: Option<i32>,
+    /// IANA timezone identifier, e.g. "America/New_York".
+    pub timezone: String,
 }
 
 impl LocationCandidate {
@@ -68,8 +80,8 @@ impl LocationCandidate {
     ) -> AppResult<LocationCandidate> {
         Ok(sqlx::query_as::<_, LocationCandidate>(
             r#"INSERT INTO location_candidates
-               (reunion_id, added_by, title, description, external_url, capacity, estimated_cost_cents)
-               VALUES ($1, $2, $3, $4, $5, $6, $7)
+               (reunion_id, added_by, title, description, external_url, capacity, estimated_cost_cents, timezone)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                RETURNING *"#,
         )
         .bind(reunion_id)
@@ -79,6 +91,7 @@ impl LocationCandidate {
         .bind(&new.external_url)
         .bind(new.capacity)
         .bind(new.estimated_cost_cents)
+        .bind(&new.timezone)
         .fetch_one(pool)
         .await?)
     }
@@ -164,12 +177,13 @@ impl LocationVote {
         .await?)
     }
 
-    /// Single query that returns (avg_score, vote_count, my_score) for a candidate.
+    /// Returns (avg_score, vote_count, my_vote) for a candidate.
+    /// my_vote includes both score and comment so the UI can pre-fill both fields.
     pub async fn aggregate_for_candidate(
         pool: &PgPool,
         candidate_id: Uuid,
         user_id: Uuid,
-    ) -> AppResult<(Option<f64>, i64, Option<i16>)> {
+    ) -> AppResult<(Option<f64>, i64, Option<LocationVoteView>)> {
         let (avg, count): (Option<f64>, i64) = sqlx::query_as(
             "SELECT AVG(score::float), COUNT(*) FROM location_votes WHERE location_candidate_id = $1",
         )
@@ -177,16 +191,33 @@ impl LocationVote {
         .fetch_one(pool)
         .await?;
 
-        let my_vote: Option<i16> = sqlx::query_as::<_, (i16,)>(
-            "SELECT score FROM location_votes WHERE location_candidate_id = $1 AND user_id = $2",
+        let my_vote: Option<LocationVoteView> = sqlx::query_as::<_, (i16, Option<String>)>(
+            "SELECT score, comment FROM location_votes WHERE location_candidate_id = $1 AND user_id = $2",
         )
         .bind(candidate_id)
         .bind(user_id)
         .fetch_optional(pool)
         .await?
-        .map(|(s,)| s);
+        .map(|(score, comment)| LocationVoteView { score, comment });
 
         Ok((avg, count, my_vote))
+    }
+
+    /// All votes with voter names for a single candidate (RA-only).
+    pub async fn votes_with_names_for_candidate(
+        pool: &PgPool,
+        candidate_id: Uuid,
+    ) -> AppResult<Vec<VoteWithName>> {
+        Ok(sqlx::query_as::<_, VoteWithName>(
+            r#"SELECT u.display_name, lv.score, lv.comment
+               FROM location_votes lv
+               JOIN users u ON u.id = lv.user_id
+               WHERE lv.location_candidate_id = $1
+               ORDER BY u.display_name"#,
+        )
+        .bind(candidate_id)
+        .fetch_all(pool)
+        .await?)
     }
 
     pub async fn by_user(
@@ -205,19 +236,29 @@ impl LocationVote {
     }
 
     /// Aggregate: average score + vote count per candidate.
-    /// Used for RA dashboard and post-reveal display.
+    /// Family-unit-weighted average score per candidate.
+    /// Each family unit counts as one vote regardless of how many members voted.
+    /// Members with no family unit each count as their own unit.
     pub async fn summary_for_reunion(
         pool: &PgPool,
         reunion_id: Uuid,
     ) -> AppResult<Vec<CandidateSummary>> {
         Ok(sqlx::query_as::<_, CandidateSummary>(
-            r#"SELECT lc.id AS candidate_id,
-                      AVG(lv.score::float) AS avg_score,
-                      COUNT(lv.id)         AS vote_count
-               FROM location_candidates lc
-               LEFT JOIN location_votes lv ON lv.location_candidate_id = lc.id
-               WHERE lc.reunion_id = $1
-               GROUP BY lc.id
+            r#"WITH per_family AS (
+                 SELECT lv.location_candidate_id,
+                        COALESCE(u.family_unit_id::text, u.id::text) AS group_key,
+                        AVG(lv.score::float) AS family_avg
+                 FROM location_votes lv
+                 JOIN users u ON u.id = lv.user_id
+                 JOIN location_candidates lc ON lc.id = lv.location_candidate_id
+                 WHERE lc.reunion_id = $1
+                 GROUP BY lv.location_candidate_id, group_key
+               )
+               SELECT location_candidate_id AS candidate_id,
+                      AVG(family_avg)        AS avg_score,
+                      COUNT(*)::bigint       AS vote_count
+               FROM per_family
+               GROUP BY location_candidate_id
                ORDER BY avg_score DESC NULLS LAST"#,
         )
         .bind(reunion_id)

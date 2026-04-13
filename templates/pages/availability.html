@@ -1,21 +1,15 @@
-{% extends "layout_app.html" %}
+{% extends "layout_reunion.html" %}
 
 {% block title %}Availability — {{ reunion.title }}{% endblock %}
 
-{% block breadcrumb %}
-<span class="text-gray-300 mx-2">/</span>
-<a href="/reunions/{{ reunion.id }}" class="text-sm text-gray-500 hover:text-gray-700">{{ reunion.title }}</a>
-<span class="text-gray-300 mx-2">/</span>
-<span class="text-sm text-gray-600">Availability</span>
-{% endblock %}
-
-{% block content %}
+{% block reunion_content %}
 <div class="mb-6">
   <h1 class="text-2xl font-bold text-gray-900">Your Availability</h1>
-  <p class="mt-1 text-gray-500 text-sm">Click dates to toggle. Changes save automatically.</p>
+  <p class="mt-1 text-gray-500 text-sm">Click or click-and-drag to mark dates. Save when done.</p>
 </div>
 
-<div x-data="availCalendar({{ my_dates_json }})" class="space-y-6">
+<div x-data="availCalendar({{ my_dates_json }})" class="space-y-6"
+     @mouseup.window="stopDrag()" @touchend.window="stopDrag()">
   {% for month in months %}
   <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
     <h2 class="text-base font-semibold text-gray-800 mb-3">{{ month.name }}</h2>
@@ -30,9 +24,12 @@
       {% let ds = d.format("%Y-%m-%d").to_string() %}
       <button
         type="button"
-        class="day-avail rounded-lg p-2 text-sm"
+        data-date="{{ ds }}"
+        class="day-avail rounded-lg p-2 text-sm select-none"
         :class="isSelected('{{ ds }}') ? 'sel' : ''"
-        @click="toggle('{{ ds }}')"
+        @mousedown.prevent="startDrag('{{ ds }}')"
+        @mouseenter="applyDrag('{{ ds }}')"
+        @touchstart.prevent="startDrag('{{ ds }}')"
         {% if !editable %}disabled{% endif %}>
         {{ d.day() }}
       </button>
@@ -56,7 +53,137 @@
 </div>
 
 {% if is_ra %}
+<!-- RA: Availability poll window -->
 <div class="mt-8 bg-white rounded-xl border border-gray-100 shadow-sm p-5">
+  <div class="flex items-center justify-between mb-1">
+    <h2 class="font-semibold text-gray-900">Availability Poll Window</h2>
+    {% if reunion.avail_poll_start.is_some() %}
+    <span class="text-xs text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
+      Custom window set
+    </span>
+    {% else %}
+    <span class="text-xs text-gray-400 bg-gray-50 border border-gray-200 px-2 py-0.5 rounded-full">
+      Using defaults
+    </span>
+    {% endif %}
+  </div>
+  <p class="text-sm text-gray-500 mb-4">
+    Control which date range family members see when filling out availability.
+    Leave blank to use the confirmed reunion dates (or a 90-day window if dates aren't set yet).
+  </p>
+  <form id="poll-window-form" class="flex flex-wrap items-end gap-3">
+    <div>
+      <label class="block text-xs font-medium text-gray-600 mb-1">From</label>
+      <input id="poll-start" type="date"
+             value="{% if let Some(s) = reunion.avail_poll_start %}{{ s }}{% endif %}"
+             class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
+    </div>
+    <div>
+      <label class="block text-xs font-medium text-gray-600 mb-1">To</label>
+      <input id="poll-end" type="date"
+             value="{% if let Some(e) = reunion.avail_poll_end %}{{ e }}{% endif %}"
+             class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
+    </div>
+    <button type="submit"
+            class="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold rounded-lg transition-colors">
+      Set window
+    </button>
+    {% if reunion.avail_poll_start.is_some() %}
+    <button type="button" id="clear-poll-btn"
+            class="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50">
+      Clear (use defaults)
+    </button>
+    {% endif %}
+  </form>
+</div>
+<script>
+document.getElementById('poll-window-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const start = document.getElementById('poll-start').value;
+  const end   = document.getElementById('poll-end').value;
+  if (!start || !end) { showToast('Both dates are required', 'error'); return; }
+  try {
+    await apiFetch('PATCH', '/reunions/{{ reunion.id }}', {
+      avail_poll_start: start,
+      avail_poll_end:   end,
+    });
+    showToast('Poll window updated', 'success');
+    setTimeout(() => window.location.reload(), 800);
+  } catch (err) { showToast(err.message, 'error'); }
+});
+document.getElementById('clear-poll-btn')?.addEventListener('click', async () => {
+  try {
+    await apiFetch('PATCH', '/reunions/{{ reunion.id }}', { clear_avail_poll: true });
+    showToast('Poll window cleared', 'success');
+    setTimeout(() => window.location.reload(), 800);
+  } catch (err) { showToast(err.message, 'error'); }
+});
+</script>
+
+<!-- RA: Set / update the confirmed date range -->
+<div class="mt-8 bg-white rounded-xl border border-amber-200 shadow-sm p-5">
+  <div class="flex items-center justify-between mb-3">
+    <h2 class="font-semibold text-gray-900">Confirm Reunion Dates</h2>
+    {% if let Some(rd) = reunion_date %}
+    <span class="text-sm text-green-700 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full">
+      Set: {{ rd.start_date }} – {{ rd.end_date }}
+    </span>
+    {% else %}
+    <span class="text-sm text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">Not set yet</span>
+    {% endif %}
+  </div>
+  <p class="text-sm text-gray-500 mb-4">Set dates directly — use this when dates were agreed out of band (SMS, email, etc.) and you want to skip or bypass the availability poll.</p>
+  <form id="set-dates-form" class="flex flex-wrap items-end gap-3">
+    <div>
+      <label class="block text-xs font-medium text-gray-600 mb-1">Start date</label>
+      <input id="dates-start" type="date" required
+             value="{% if let Some(rd) = reunion_date %}{{ rd.start_date }}{% endif %}"
+             class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
+    </div>
+    <div>
+      <label class="block text-xs font-medium text-gray-600 mb-1">End date</label>
+      <input id="dates-end" type="date" required
+             value="{% if let Some(rd) = reunion_date %}{{ rd.end_date }}{% endif %}"
+             class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
+    </div>
+    <button type="submit"
+            class="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold rounded-lg transition-colors">
+      Save dates
+    </button>
+  </form>
+</div>
+<script>
+document.getElementById('set-dates-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  try {
+    await apiFetch('POST', '/reunions/{{ reunion.id }}/dates', {
+      start_date: document.getElementById('dates-start').value,
+      end_date:   document.getElementById('dates-end').value,
+    });
+    showToast('Dates saved!', 'success');
+    setTimeout(() => window.location.reload(), 800);
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+});
+</script>
+
+<!-- RA: Phase advance shortcut -->
+<div class="mt-4 bg-white rounded-xl border border-gray-100 shadow-sm p-5">
+  <div class="flex items-center justify-between">
+    <div>
+      <h2 class="font-semibold text-gray-900">Current phase: <span class="text-amber-600">{{ reunion.phase.label() }}</span></h2>
+      <p class="text-sm text-gray-500 mt-0.5">Advance to the next phase when ready. Dates must be set before leaving Availability.</p>
+    </div>
+    <button onclick="advancePhase('{{ reunion.id }}')"
+            class="px-4 py-2 bg-green-500 hover:bg-green-600 text-white text-sm font-semibold rounded-lg transition-colors">
+      Advance phase →
+    </button>
+  </div>
+</div>
+
+<!-- RA: Availability heatmap -->
+<div class="mt-4 bg-white rounded-xl border border-gray-100 shadow-sm p-5">
   <h2 class="font-semibold text-gray-900 mb-3">Availability Heatmap</h2>
   {% if heatmap.is_empty() %}
   <p class="text-sm text-gray-400">No responses yet.</p>
