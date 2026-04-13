@@ -12,7 +12,7 @@ use crate::{
     error::{AppError, AppResult},
     models::activity::{
         ActivityComment, ActivityIdea, ActivityStatus, ActivityVote,
-        NewActivityIdea,
+        NewActivityIdea, PatchActivityIdea,
     },
     state::AppState,
 };
@@ -90,6 +90,45 @@ pub async fn create_activity(
 
     let idea = ActivityIdea::create(state.db(), reunion_id, user.id, body).await?;
     Ok((StatusCode::CREATED, Json(idea)))
+}
+
+// ── PATCH /reunions/:id/activities/:act_id ───────────────────────────────────
+// Proposer or RA can edit title, description, category, needs_time_slot, and
+// suggested_time. Status-locked activities (scheduled/cancelled) can still be
+// edited — the server doesn't block it; the UI is just less likely to show it.
+
+pub async fn update_activity(
+    user: CurrentUser,
+    State(state): State<AppState>,
+    Path((reunion_id, act_id)): Path<(Uuid, Uuid)>,
+    Json(body): Json<PatchActivityIdea>,
+) -> AppResult<impl IntoResponse> {
+    load_reunion(&state, reunion_id).await?;
+    let is_admin = user_is_ra(&state, &user, reunion_id).await;
+
+    if body.title.trim().is_empty() {
+        return Err(AppError::BadRequest("title cannot be empty".into()));
+    }
+    if body.title.len() > 200 {
+        return Err(AppError::BadRequest("title cannot exceed 200 characters".into()));
+    }
+    if body.description.as_deref().map(|d| d.len()).unwrap_or(0) > 5_000 {
+        return Err(AppError::BadRequest("description cannot exceed 5,000 characters".into()));
+    }
+    if !["group", "optional", "meal"].contains(&body.category.as_str()) {
+        return Err(AppError::BadRequest("category must be group, optional, or meal".into()));
+    }
+
+    let idea = ActivityIdea::find_by_id(state.db(), act_id).await?;
+    if idea.reunion_id != reunion_id {
+        return Err(AppError::NotFound);
+    }
+    if !is_admin && idea.proposed_by != user.id {
+        return Err(AppError::Forbidden);
+    }
+
+    let updated = ActivityIdea::update(state.db(), act_id, &body).await?;
+    Ok(Json(updated))
 }
 
 // ── PUT /reunions/:id/activities/:act_id/vote ─────────────────────────────────

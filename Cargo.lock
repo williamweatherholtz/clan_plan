@@ -414,6 +414,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sqlx",
+ "subtle",
  "thiserror 1.0.69",
  "time",
  "tokio",
@@ -3062,6 +3063,7 @@ dependencies = [
  "tower-layer",
  "tower-service",
  "tracing",
+ "uuid",
 ]
 
 [[package]]

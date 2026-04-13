@@ -314,6 +314,8 @@ pub struct ActivityPageView {
     pub proposed_by_family: Option<String>,
     /// True when the logged-in user originally proposed this idea.
     pub is_own_idea: bool,
+    /// True when the logged-in user has posted at least one comment on this idea.
+    pub my_comment: bool,
 }
 
 // ── Expense view type ─────────────────────────────────────────────────────────
@@ -960,9 +962,11 @@ pub async fn dashboard(
         if r.phase == Phase::Draft { is_ra } else { is_ra || user_enrolled_ids.contains(&r.id) }
     }).collect();
 
-    // If exactly one non-Draft accessible reunion, go straight to it.
+    // If the user has exactly one accessible reunion and it is not in Draft, go straight to it.
+    // If there are also Draft-phase reunions visible (i.e. the user is an RA setting one up),
+    // skip the redirect so the dashboard renders and they can see all their reunions.
     let non_draft: Vec<&&Reunion> = accessible.iter().filter(|r| r.phase != Phase::Draft).collect();
-    if non_draft.len() == 1 {
+    if accessible.len() == 1 && non_draft.len() == 1 {
         let r = non_draft[0];
         let url = match &r.slug {
             Some(s) => format!("/r/{}", s),
@@ -1486,6 +1490,24 @@ pub async fn activities_page(
         .await
         .unwrap_or_default();
 
+    // Single batch query: which of these ideas has the current user commented on?
+    let idea_ids: Vec<Uuid> = ideas.iter().map(|i| i.id).collect();
+    let my_commented_ids: Vec<Uuid> = if idea_ids.is_empty() {
+        vec![]
+    } else {
+        sqlx::query_scalar::<_, Uuid>(
+            "SELECT DISTINCT activity_idea_id FROM activity_comments \
+             WHERE activity_idea_id = ANY($1) AND user_id = $2",
+        )
+        .bind(&idea_ids)
+        .bind(user.id)
+        .fetch_all(state.db())
+        .await
+        .unwrap_or_default()
+    };
+    let my_commented_set: std::collections::HashSet<Uuid> =
+        my_commented_ids.into_iter().collect();
+
     let mut activities = Vec::new();
     for idea in ideas {
         let summary = ActivityIdea::for_idea(state.db(), idea.id)
@@ -1532,6 +1554,7 @@ pub async fn activities_page(
         .flatten()
         .unwrap_or_else(|| ("Unknown".to_string(), None));
         let is_own_idea = idea.proposed_by == user.id;
+        let my_comment = my_commented_set.contains(&idea.id);
         activities.push(ActivityPageView {
             idea,
             avg_interest_str,
@@ -1544,6 +1567,7 @@ pub async fn activities_page(
             proposed_by_name: proposer.0,
             proposed_by_family: proposer.1,
             is_own_idea,
+            my_comment,
         });
     }
 

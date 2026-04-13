@@ -68,6 +68,13 @@ pub async fn get_today(
 }
 
 // ── GET /reunions/:id/schedule.ics ───────────────────────────────────────────
+//
+// RFC 5545 compliance notes:
+//  • DTSTAMP is required on every VEVENT (§3.6.1).
+//  • TZID in DTSTART/DTEND requires a matching VTIMEZONE block in the same
+//    calendar object (§3.2.19). Rather than embed a full VTIMEZONE definition,
+//    we convert all times to UTC — signalled by the trailing "Z" — which is
+//    universally accepted and needs no VTIMEZONE component.
 
 pub async fn get_ics(
     _user: CurrentUser,
@@ -77,31 +84,43 @@ pub async fn get_ics(
     let reunion = load_reunion(&state, reunion_id).await?;
     let blocks = ScheduleBlock::list_for_reunion(state.db(), reunion_id).await?;
     let tz_str = get_reunion_tz_string(&state, &reunion).await;
+    let tz: Tz = tz_str.parse().unwrap_or(chrono_tz::UTC);
+
+    // DTSTAMP = when this calendar was generated (required by RFC 5545 §3.6.1).
+    let dtstamp = Utc::now().format("%Y%m%dT%H%M%SZ").to_string();
 
     let mut ics = format!(
-        "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//clanplan//EN\r\nCALSCALE:GREGORIAN\r\nX-WR-TIMEZONE:{tz_str}\r\n",
+        "BEGIN:VCALENDAR\r\n\
+         VERSION:2.0\r\n\
+         PRODID:-//clanplan//EN\r\n\
+         CALSCALE:GREGORIAN\r\n\
+         X-WR-TIMEZONE:{tz_str}\r\n",
     );
 
     for block in &blocks {
-        let dtstart = format_ics_datetime(block.block_date, block.start_time);
-        let dtend = format_ics_datetime(block.block_date, block.end_time);
+        // Convert stored local times to UTC so no VTIMEZONE block is needed.
+        let dtstart = local_to_utc(block.block_date, block.start_time, tz);
+        let dtend   = local_to_utc(block.block_date, block.end_time,   tz);
         let summary = escape_ics(&block.title);
-        let desc = block
-            .description
-            .as_deref()
-            .map(escape_ics)
-            .unwrap_or_default();
+        let desc = block.description.as_deref().map(escape_ics).unwrap_or_default();
+        let location = block.location_note.as_deref().map(escape_ics).unwrap_or_default();
 
         ics.push_str(&format!(
             "BEGIN:VEVENT\r\n\
              UID:{id}@clanplan\r\n\
-             DTSTART;TZID={tz_str}:{dtstart}\r\n\
-             DTEND;TZID={tz_str}:{dtend}\r\n\
-             SUMMARY:{summary}\r\n\
-             DESCRIPTION:{desc}\r\n\
-             END:VEVENT\r\n",
+             DTSTAMP:{dtstamp}\r\n\
+             DTSTART:{dtstart}\r\n\
+             DTEND:{dtend}\r\n\
+             SUMMARY:{summary}\r\n",
             id = block.id,
         ));
+        if !desc.is_empty() {
+            ics.push_str(&format!("DESCRIPTION:{desc}\r\n"));
+        }
+        if !location.is_empty() {
+            ics.push_str(&format!("LOCATION:{location}\r\n"));
+        }
+        ics.push_str("END:VEVENT\r\n");
     }
 
     ics.push_str("END:VCALENDAR\r\n");
@@ -157,8 +176,20 @@ async fn build_snapshot(state: &AppState, reunion_id: Uuid, tz: Tz) -> crate::er
     })
 }
 
-fn format_ics_datetime(date: chrono::NaiveDate, time: chrono::NaiveTime) -> String {
-    format!("{}T{}", date.format("%Y%m%d"), time.format("%H%M%S"))
+/// Convert a naive local date+time in the given timezone to a UTC ICS datetime
+/// string (`YYYYMMDDTHHMMSSz`).  Using UTC avoids the need for a `VTIMEZONE`
+/// component (RFC 5545 §3.2.19).
+///
+/// DST ambiguity (fall-back clocks): `earliest()` picks the first occurrence.
+/// DST gap (spring-forward, time doesn't exist): falls back to emitting the
+/// local wall-clock digits with a `Z` suffix — wrong offset but valid syntax.
+fn local_to_utc(date: chrono::NaiveDate, time: chrono::NaiveTime, tz: Tz) -> String {
+    let naive_dt = date.and_time(time);
+    naive_dt
+        .and_local_timezone(tz)
+        .earliest()
+        .map(|dt| dt.with_timezone(&Utc).format("%Y%m%dT%H%M%SZ").to_string())
+        .unwrap_or_else(|| format!("{}Z", naive_dt.format("%Y%m%dT%H%M%S")))
 }
 
 fn escape_ics(s: &str) -> String {
@@ -173,18 +204,30 @@ mod tests {
     use super::*;
     use chrono::{NaiveDate, NaiveTime};
 
+    // local_to_utc with UTC timezone: output == input with Z suffix
     #[test]
     fn ics_datetime_format() {
         let date = NaiveDate::from_ymd_opt(2026, 7, 12).unwrap();
         let time = NaiveTime::from_hms_opt(18, 0, 0).unwrap();
-        assert_eq!(format_ics_datetime(date, time), "20260712T180000");
+        assert_eq!(local_to_utc(date, time, chrono_tz::UTC), "20260712T180000Z");
     }
 
     #[test]
     fn ics_datetime_midnight() {
         let date = NaiveDate::from_ymd_opt(2026, 7, 12).unwrap();
         let time = NaiveTime::from_hms_opt(0, 0, 0).unwrap();
-        assert_eq!(format_ics_datetime(date, time), "20260712T000000");
+        assert_eq!(local_to_utc(date, time, chrono_tz::UTC), "20260712T000000Z");
+    }
+
+    // America/New_York is UTC-4 in July (EDT)
+    #[test]
+    fn ics_datetime_eastern_summer() {
+        let date = NaiveDate::from_ymd_opt(2026, 7, 12).unwrap();
+        let time = NaiveTime::from_hms_opt(18, 0, 0).unwrap();
+        assert_eq!(
+            local_to_utc(date, time, chrono_tz::America::New_York),
+            "20260712T220000Z"  // 18:00 EDT = 22:00 UTC
+        );
     }
 
     #[test]

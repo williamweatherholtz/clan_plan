@@ -40,6 +40,7 @@ pub struct ActivityIdea {
     pub proposed_by: Uuid,
     pub title: String,
     pub description: Option<String>,
+    pub category: String,
     pub needs_time_slot: bool,
     pub suggested_time: Option<String>,
     pub status: ActivityStatus,
@@ -88,10 +89,26 @@ pub struct ActivitySummary {
     pub comment_count: i64,
 }
 
+fn default_optional_category() -> String {
+    "optional".to_string()
+}
+
 #[derive(Debug, Deserialize)]
 pub struct NewActivityIdea {
     pub title: String,
     pub description: Option<String>,
+    #[serde(default = "default_optional_category")]
+    pub category: String,
+    pub needs_time_slot: bool,
+    pub suggested_time: Option<String>,
+}
+
+/// Fields that a proposer or RA can overwrite after creation.
+#[derive(Debug, Deserialize)]
+pub struct PatchActivityIdea {
+    pub title: String,
+    pub description: Option<String>,
+    pub category: String,
     pub needs_time_slot: bool,
     pub suggested_time: Option<String>,
 }
@@ -107,18 +124,47 @@ impl ActivityIdea {
     ) -> AppResult<ActivityIdea> {
         Ok(sqlx::query_as::<_, ActivityIdea>(
             r#"INSERT INTO activity_ideas
-               (reunion_id, proposed_by, title, description, needs_time_slot, suggested_time)
-               VALUES ($1, $2, $3, $4, $5, $6)
+               (reunion_id, proposed_by, title, description, category, needs_time_slot, suggested_time)
+               VALUES ($1, $2, $3, $4, $5, $6, $7)
                RETURNING *"#,
         )
         .bind(reunion_id)
         .bind(proposed_by)
         .bind(&new.title)
         .bind(&new.description)
+        .bind(&new.category)
         .bind(new.needs_time_slot)
         .bind(&new.suggested_time)
         .fetch_one(pool)
         .await?)
+    }
+
+    /// Update editable fields. Caller must verify ownership before calling.
+    pub async fn update(
+        pool: &PgPool,
+        idea_id: Uuid,
+        patch: &PatchActivityIdea,
+    ) -> AppResult<ActivityIdea> {
+        sqlx::query_as::<_, ActivityIdea>(
+            r#"UPDATE activity_ideas
+               SET title           = $1,
+                   description     = $2,
+                   category        = $3,
+                   needs_time_slot = $4,
+                   suggested_time  = $5,
+                   updated_at      = NOW()
+               WHERE id = $6
+               RETURNING *"#,
+        )
+        .bind(patch.title.trim())
+        .bind(&patch.description)
+        .bind(&patch.category)
+        .bind(patch.needs_time_slot)
+        .bind(&patch.suggested_time)
+        .bind(idea_id)
+        .fetch_optional(pool)
+        .await?
+        .ok_or(AppError::NotFound)
     }
 
     pub async fn find_by_id(pool: &PgPool, id: Uuid) -> AppResult<ActivityIdea> {
