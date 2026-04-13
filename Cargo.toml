@@ -16,7 +16,7 @@ path = "src/lib.rs"
 axum = { version = "0.7", features = ["multipart", "macros"] }
 tokio = { version = "1", features = ["full"] }
 tower = "0.4"
-tower-http = { version = "0.5", features = ["fs", "trace", "cors", "limit"] }
+tower-http = { version = "0.5", features = ["fs", "trace", "cors", "limit", "set-header"] }
 tower-sessions = "0.12"
 tower-sessions-sqlx-store = { version = "0.13", features = ["postgres"] }
 tokio-stream = "0.1"
