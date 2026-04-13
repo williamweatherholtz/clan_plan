@@ -456,6 +456,8 @@ struct ReunionOverviewPage {
     base_url: String,
     /// Comma-separated RA display names (empty string if none).
     ra_names: String,
+    /// Display name of the selected location candidate, if one has been chosen.
+    selected_location_name: Option<String>,
 }
 
 pub struct FamilyUnitWithEnrolled {
@@ -1198,9 +1200,24 @@ pub async fn reunion_overview(
     .await
     .unwrap_or(0);
 
+    // Count verified users who are actually members of this reunion:
+    // RAs, users in enrolled family units, and invite-link members.
     let member_count = sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM users WHERE deactivated_at IS NULL AND email_verified_at IS NOT NULL",
+        "SELECT COUNT(DISTINCT u.id)
+         FROM users u
+         WHERE u.deactivated_at IS NULL
+           AND u.email_verified_at IS NOT NULL
+           AND (
+             EXISTS(SELECT 1 FROM reunion_admins
+                    WHERE reunion_id = $1 AND user_id = u.id)
+             OR (u.family_unit_id IS NOT NULL AND EXISTS(
+               SELECT 1 FROM reunion_family_units
+               WHERE reunion_id = $1 AND family_unit_id = u.family_unit_id))
+             OR EXISTS(SELECT 1 FROM reunion_invite_members
+                       WHERE reunion_id = $1 AND user_id = u.id)
+           )",
     )
+    .bind(reunion_id)
     .fetch_one(state.db())
     .await
     .unwrap_or(1)
@@ -1229,6 +1246,15 @@ pub async fn reunion_overview(
     .unwrap_or_default();
     let ra_names = ra_name_list.join(", ");
 
+    let selected_location_name = if let Some(loc_id) = reunion.selected_location_id {
+        LocationCandidate::find_by_id(state.db(), loc_id)
+            .await
+            .ok()
+            .map(|loc| loc.title)
+    } else {
+        None
+    };
+
     Ok(ReunionOverviewPage {
         user_name: user.display_name.clone(),
         is_sysadmin: user.is_sysadmin(),
@@ -1243,6 +1269,7 @@ pub async fn reunion_overview(
         location_count,
         base_url,
         ra_names,
+        selected_location_name,
     }
     .into_response())
 }

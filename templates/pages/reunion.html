@@ -5,14 +5,38 @@
 {% block reunion_content %}
 <h1 class="font-display text-2xl font-bold leading-tight mb-5" style="color:var(--ink)">{{ reunion.title }}</h1>
 
-<!-- Reunion description + RA info -->
-{% if reunion.description.is_some() || !ra_names.is_empty() %}
+<!-- Info card: description, key facts, RA -->
+{% let has_info = reunion.description.is_some() || reunion_date.is_some() || selected_location_name.is_some() || !ra_names.is_empty() %}
+{% if has_info %}
 <div class="mb-5 card px-5 py-4">
   {% if let Some(desc) = reunion.description %}
-  <p class="text-gray-700">{{ desc }}</p>
+  <p class="text-gray-700 mb-3">{{ desc }}</p>
   {% endif %}
+
+  {% let has_facts = reunion_date.is_some() || selected_location_name.is_some() %}
+  {% if has_facts %}
+  <div class="flex flex-wrap gap-4 mb-2">
+    {% match reunion_date %}
+    {% when Some with (rd) %}
+    <div class="flex items-center gap-1.5 text-sm text-gray-700">
+      <span class="text-base">📅</span>
+      <span class="font-medium">{{ rd.start_date }} – {{ rd.end_date }}</span>
+    </div>
+    {% when None %}
+    {% endmatch %}
+    {% if let Some(loc_name) = selected_location_name %}
+    <div class="flex items-center gap-1.5 text-sm text-gray-700">
+      <span class="text-base">📍</span>
+      <span class="font-medium">{{ loc_name }}</span>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
   {% if !ra_names.is_empty() %}
-  <p class="text-sm text-gray-500 {% if reunion.description.is_some() %}mt-2{% endif %}">Organised by <span class="font-medium text-gray-700">{{ ra_names }}</span></p>
+  <p class="text-sm text-gray-500 {% if reunion.description.is_some() || has_facts %}mt-1{% endif %}">
+    Organised by <span class="font-medium text-gray-700">{{ ra_names }}</span>
+  </p>
   {% endif %}
 </div>
 {% endif %}
@@ -43,9 +67,7 @@
 </div>
 {% endif %}
 
-<!-- ── Open tracks ──────────────────────────────────────────────────────────── -->
-<!-- Each "track" is a card showing aggregate progress + personal status.       -->
-<!-- Personal status (done/pending) is loaded via JS from /api/.../my-completion -->
+<!-- ── Phase-specific content ───────────────────────────────────────────────── -->
 
 {% if reunion.phase.label() == "Draft" %}
   {% if is_ra %}
@@ -79,7 +101,7 @@
       </div>
     </div>
 
-    <!-- Locations track (shown as soon as candidates exist) -->
+    <!-- Locations track -->
     {% if location_count > 0 %}
     <div class="card p-5">
       <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
@@ -116,18 +138,6 @@
 
 {% else if reunion.phase.label() == "Voting on Locations" %}
   <div class="space-y-4">
-
-    {% match reunion_date %}
-    {% when Some with (rd) %}
-    <div class="card p-5">
-      <div class="flex items-center gap-2 mb-1">
-        <span class="text-base font-semibold text-gray-900">📅 Dates</span>
-        <span class="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-medium">✓ Set</span>
-      </div>
-      <p class="text-sm text-gray-600">{{ rd.start_date }} – {{ rd.end_date }}</p>
-    </div>
-    {% when None %}
-    {% endmatch %}
 
     {% if location_count > 0 %}
     <div class="card p-5">
@@ -169,38 +179,43 @@
 
 {% else if reunion.phase.label() == "Prep Completed" %}
   <div class="space-y-4">
-    {% match reunion_date %}
-    {% when Some with (rd) %}
-    <div class="card p-5">
-      <div class="flex items-center gap-2 mb-1">
-        <span class="text-base font-semibold text-gray-900">📅 Dates</span>
-        <span class="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-medium">✓ Set</span>
-      </div>
-      <p class="text-sm text-gray-600">{{ rd.start_date }} – {{ rd.end_date }}</p>
-    </div>
-    {% when None %}
-    {% endmatch %}
-    <div class="card p-5">
-      <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
-        <div>
-          <span class="text-base font-semibold text-gray-900">💡 Activities</span>
-          <p class="text-sm text-gray-500 mt-1">Review activity ideas and build the schedule.</p>
-        </div>
-        <a href="{{ base_url }}/activities"
-           class="flex-shrink-0 btn-primary px-4 py-2 text-sm rounded-lg w-full sm:w-auto text-center">
-          View activities →
-        </a>
-      </div>
-    </div>
     {% if is_ra %}
     <div class="bg-indigo-50 border border-indigo-200 rounded-xl p-4 text-sm text-indigo-700">
       <strong>Waiting for start date.</strong> The reunion will switch to Active automatically when the dates arrive.
     </div>
     {% endif %}
+
+    <!-- Quick actions -->
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <a href="{{ base_url }}/activities"
+         class="card card-hover p-4 flex items-center gap-3">
+        <span class="text-2xl leading-none">💡</span>
+        <div>
+          <p class="font-semibold text-gray-900 text-sm">Activities</p>
+          <p class="text-xs text-gray-500">Review &amp; build schedule</p>
+        </div>
+      </a>
+      <a href="{{ base_url }}/schedule"
+         class="card card-hover p-4 flex items-center gap-3">
+        <span class="text-2xl leading-none">📋</span>
+        <div>
+          <p class="font-semibold text-gray-900 text-sm">Schedule</p>
+          <p class="text-xs text-gray-500">See the full itinerary</p>
+        </div>
+      </a>
+      <a href="{{ base_url }}/expenses"
+         class="card card-hover p-4 flex items-center gap-3">
+        <span class="text-2xl leading-none">💸</span>
+        <div>
+          <p class="font-semibold text-gray-900 text-sm">Expenses</p>
+          <p class="text-xs text-gray-500">Track shared costs</p>
+        </div>
+      </a>
+    </div>
   </div>
 
 {% else if reunion.phase.label() == "Reunion Active" %}
-  <!-- Embedded live today view -->
+  <!-- Today's schedule (current + upcoming only) -->
   <div class="mb-4">
     <div class="flex items-center justify-between mb-3">
       <h2 class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Today's Schedule</h2>
@@ -223,14 +238,22 @@
     </div>
   </div>
 
-  <!-- Quick-access buttons -->
-  <div class="grid grid-cols-2 gap-3">
+  <!-- Quick actions -->
+  <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
     <a href="{{ base_url }}/media"
        class="card card-hover p-4 flex items-center gap-3">
       <span class="text-2xl leading-none">📷</span>
       <div>
-        <p class="font-semibold text-gray-900 text-sm">Photos</p>
+        <p class="font-semibold text-gray-900 text-sm">Add Photos</p>
         <p class="text-xs text-gray-500">Share memories</p>
+      </div>
+    </a>
+    <a href="{{ base_url }}/schedule"
+       class="card card-hover p-4 flex items-center gap-3">
+      <span class="text-2xl leading-none">📋</span>
+      <div>
+        <p class="font-semibold text-gray-900 text-sm">Schedule</p>
+        <p class="text-xs text-gray-500">Full itinerary &amp; sign-ups</p>
       </div>
     </a>
     <a href="{{ base_url }}/expenses"
@@ -244,18 +267,48 @@
   </div>
 
 {% else if reunion.phase.label() == "Post-Reunion" %}
-  <div class="card p-5">
-    <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
-      <div>
-        <div class="flex items-center gap-2 mb-1">
-          <span class="text-base font-semibold text-gray-900">📋 Reunion Survey</span>
-          <span id="survey-status" class="hidden text-xs px-2 py-0.5 rounded-full font-medium"></span>
+  <div class="space-y-4">
+    <div class="card p-5">
+      <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+        <div>
+          <div class="flex items-center gap-2 mb-1">
+            <span class="text-base font-semibold text-gray-900">📋 Reunion Survey</span>
+            <span id="survey-status" class="hidden text-xs px-2 py-0.5 rounded-full font-medium"></span>
+          </div>
+          <p class="text-sm text-gray-500">Share your thoughts on this year's reunion.</p>
         </div>
-        <p class="text-sm text-gray-500">Share your thoughts on this year's reunion.</p>
+        <a href="{{ base_url }}/survey"
+           class="flex-shrink-0 btn-primary px-4 py-2 text-sm rounded-lg">
+          Take survey →
+        </a>
       </div>
-      <a href="{{ base_url }}/survey"
-         class="flex-shrink-0 btn-primary px-4 py-2 text-sm rounded-lg">
-        Take survey →
+    </div>
+
+    <!-- Quick actions -->
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <a href="{{ base_url }}/media"
+         class="card card-hover p-4 flex items-center gap-3">
+        <span class="text-2xl leading-none">📷</span>
+        <div>
+          <p class="font-semibold text-gray-900 text-sm">Photos</p>
+          <p class="text-xs text-gray-500">Browse memories</p>
+        </div>
+      </a>
+      <a href="{{ base_url }}/expenses"
+         class="card card-hover p-4 flex items-center gap-3">
+        <span class="text-2xl leading-none">💸</span>
+        <div>
+          <p class="font-semibold text-gray-900 text-sm">Expenses</p>
+          <p class="text-xs text-gray-500">Settle up</p>
+        </div>
+      </a>
+      <a href="{{ base_url }}/activities"
+         class="card card-hover p-4 flex items-center gap-3">
+        <span class="text-2xl leading-none">💡</span>
+        <div>
+          <p class="font-semibold text-gray-900 text-sm">Activities</p>
+          <p class="text-xs text-gray-500">Look back at what happened</p>
+        </div>
       </a>
     </div>
   </div>
@@ -303,6 +356,7 @@
 <script>
 startTodaySSE('{{ reunion.id }}', {
   oneShot: true,
+  hidePast: true,
   startDate: {% if let Some(rd) = reunion_date %}'{{ rd.start_date }}'{% else %}null{% endif %},
 });
 initTodayCheckbox();

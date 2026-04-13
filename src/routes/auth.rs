@@ -1,7 +1,7 @@
 use axum::{
     extract::{Query, State},
     http::{HeaderMap, StatusCode},
-    response::{IntoResponse, Redirect},
+    response::{IntoResponse, Redirect, Response},
     Json,
 };
 use oauth2::{
@@ -14,12 +14,14 @@ use crate::{
     auth::{
         google::{GoogleUserInfo, OAUTH_CSRF_KEY, OAUTH_PKCE_KEY},
         password,
-        session::{self, CurrentUser},
+        session::{self, CurrentUser, PENDING_INVITE_KEY},
     },
     error::{AppError, AppResult},
     models::{
         app_settings::AppSettings,
+        invite::ReunionInvite,
         login_attempt::{LoginAttempt, MAX_FAILURES},
+        reunion::Reunion,
         user::{EmailVerification, NewUser, PasswordReset, User},
     },
     state::AppState,
@@ -231,14 +233,37 @@ pub async fn logout(
 
 pub async fn verify_email(
     State(state): State<AppState>,
+    session: Session,
     Query(params): Query<VerifyEmailParams>,
-) -> AppResult<impl IntoResponse> {
+) -> AppResult<Response> {
     let verification = EmailVerification::consume(state.db(), &params.token).await?;
     User::mark_email_verified(state.db(), verification.user_id).await?;
-    // In a template-rendered app this redirects; for now return JSON
-    Ok(Json(MessageResponse {
-        message: "email verified — you can now log in",
-    }))
+
+    // Auto-log the user in so they don't have to sign in again.
+    session::save_user_id(&session, verification.user_id).await?;
+
+    // Redeem any pending invite stored when they visited /join/:token before registering.
+    let pending: Option<String> = session.get(PENDING_INVITE_KEY).await.ok().flatten();
+    if let Some(token) = pending {
+        let _ = session.remove::<String>(PENDING_INVITE_KEY).await;
+        if let Ok(invite) = ReunionInvite::find_by_token(state.db(), &token).await {
+            let _ = ReunionInvite::redeem(state.db(), &invite, verification.user_id).await;
+            if let Ok(reunion) = Reunion::find_by_id(state.db(), invite.reunion_id).await {
+                let url = match &reunion.slug {
+                    Some(s) => format!("/r/{}", s),
+                    None => format!("/reunions/{}", reunion.id),
+                };
+                return Ok(Redirect::to(&url).into_response());
+            }
+        }
+    }
+
+    // Flash success and send to dashboard.
+    let _ = session.insert("flash", serde_json::json!({
+        "kind": "success",
+        "text": "Email verified — welcome!"
+    })).await;
+    Ok(Redirect::to("/dashboard").into_response())
 }
 
 // ── POST /auth/forgot-password ─────────────────────────────────────────────────
@@ -387,6 +412,22 @@ pub async fn google_callback(
     let user = find_or_create_google_user(state.db(), &user_info).await?;
 
     session::save_user_id(&session, user.id).await?;
+
+    // Redeem any pending invite stored when they visited /join/:token before signing in.
+    let pending: Option<String> = session.get(PENDING_INVITE_KEY).await.ok().flatten();
+    if let Some(token) = pending {
+        let _ = session.remove::<String>(PENDING_INVITE_KEY).await;
+        if let Ok(invite) = ReunionInvite::find_by_token(state.db(), &token).await {
+            let _ = ReunionInvite::redeem(state.db(), &invite, user.id).await;
+            if let Ok(reunion) = Reunion::find_by_id(state.db(), invite.reunion_id).await {
+                let url = match &reunion.slug {
+                    Some(s) => format!("/r/{}", s),
+                    None => format!("/reunions/{}", reunion.id),
+                };
+                return Ok(Redirect::to(&url));
+            }
+        }
+    }
 
     Ok(Redirect::to("/"))
 }

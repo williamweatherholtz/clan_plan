@@ -325,6 +325,15 @@ async function removeInviteMember(userId) {
   } catch (err) { showToast(err.message, 'error'); }
 }
 
+async function unarchiveReunion(id) {
+  if (!confirm('Restore this reunion from the archive?')) return;
+  try {
+    await apiFetch('POST', `/reunions/${id}/unarchive`, null);
+    showToast('Reunion restored', 'success');
+    setTimeout(() => location.reload(), 1000);
+  } catch (err) { showToast(err.message, 'error'); }
+}
+
 async function archiveReunion(id) {
   if (!confirm('Archive this reunion? It will be read-only.')) return;
   try {

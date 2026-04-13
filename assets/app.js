@@ -204,6 +204,7 @@ async function voteActivity(reunionId, actId, score) {
 
 // ── Today-view SSE ────────────────────────────────────────────────────────────
 let _lastTodayBlocks = null;
+let _lastHidePast = false;
 let _todayUse24h = localStorage.getItem('todayUse24h') === 'true';
 
 /** Format "HH:MM[:SS]" as "H:MM AM/PM" (or keep 24h if flag set). */
@@ -221,7 +222,7 @@ function toggle24h(checked) {
   localStorage.setItem('todayUse24h', String(checked));
   if (_lastTodayBlocks) {
     const container = document.getElementById('today-content');
-    if (container) renderTodaySnapshot(_lastTodayBlocks.blocks || [], container, _lastTodayStartDate);
+    if (container) renderTodaySnapshot(_lastTodayBlocks.blocks || [], container, _lastTodayStartDate, _lastHidePast);
   }
 }
 
@@ -247,8 +248,10 @@ function startTodaySSE(reunionId, opts = {}) {
   if (!container) return;
 
   const oneShot   = opts.oneShot   ?? false;
+  const hidePast  = opts.hidePast  ?? false;
   const startDate = opts.startDate ?? null;
   _lastTodayStartDate = startDate;
+  _lastHidePast = hidePast;
 
   let received = false;
 
@@ -276,7 +279,7 @@ function startTodaySSE(reunionId, opts = {}) {
     try {
       const data = JSON.parse(e.data);
       _lastTodayBlocks = data;
-      renderTodaySnapshot(data.blocks || [], container, startDate);
+      renderTodaySnapshot(data.blocks || [], container, startDate, hidePast);
     } catch (err) {
       console.error('SSE parse error', err);
       showEmpty();
@@ -301,7 +304,7 @@ function startTodaySSE(reunionId, opts = {}) {
 // Initialise theme as soon as app.js is parsed (bottom of <body>)
 initTheme();
 
-function renderTodaySnapshot(blocks, container, startDate = null) {
+function renderTodaySnapshot(blocks, container, startDate = null, hidePast = false) {
   const now = new Date();
   const nowMins = now.getHours() * 60 + now.getMinutes();
 
@@ -316,10 +319,24 @@ function renderTodaySnapshot(blocks, container, startDate = null) {
     return;
   }
 
+  // On the overview page, hide blocks that have already ended.
+  let visibleBlocks = blocks;
+  if (hidePast) {
+    visibleBlocks = blocks.filter(b => {
+      const [eh, em] = b.end_time.split(':').map(Number);
+      return (eh * 60 + em) > nowMins;
+    });
+    if (!visibleBlocks.length) {
+      container.innerHTML =
+        `<p class="text-sm text-center py-6" style="color:var(--muted)">All done for today! 🎉</p>`;
+      return;
+    }
+  }
+
   const colors = { group:'bg-blue-50 border-blue-300', optional:'bg-green-50 border-green-300',
                    meal:'bg-amber-50 border-amber-300', travel:'bg-purple-50 border-purple-300' };
 
-  container.innerHTML = blocks.map(b => {
+  container.innerHTML = visibleBlocks.map(b => {
     const [sh, sm] = b.start_time.split(':').map(Number);
     const [eh, em] = b.end_time.split(':').map(Number);
     const startMins = sh * 60 + sm;
