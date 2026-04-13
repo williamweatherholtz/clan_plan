@@ -70,11 +70,14 @@ async function confirmAction(message, fn) {
 }
 
 // ── Availability calendar ─────────────────────────────────────────────────────
-function availCalendar(initialDates) {
+function availCalendar(initialDates, reunionId) {
   return {
     selected: new Set(initialDates),
+    inverted: false,       // true = user is marking UNavailable days (shown red)
+    reunionId,
     _dragging: false,
-    _dragMode: 'add',   // 'add' | 'remove'
+    _dragMode: 'add',      // 'add' | 'remove'
+    _saveTimer: null,
 
     isSelected(dateStr) { return this.selected.has(dateStr); },
 
@@ -88,11 +91,47 @@ function availCalendar(initialDates) {
     applyDrag(dateStr) {
       if (this._dragging) this._applyDate(dateStr);
     },
-    stopDrag() { this._dragging = false; },
+    stopDrag() {
+      if (this._dragging) {
+        this._dragging = false;
+        this._scheduleSave();
+      }
+    },
 
     _applyDate(dateStr) {
       if (this._dragMode === 'add') this.selected.add(dateStr);
       else this.selected.delete(dateStr);
+    },
+
+    // Toggling inverted flips the selection so the server-side meaning is preserved.
+    // (selected = available in normal mode; selected = unavailable in inverted mode)
+    onInvertedChange() {
+      const all = Array.from(this.$el.querySelectorAll('[data-date]')).map(el => el.dataset.date);
+      this.selected = new Set(all.filter(d => !this.selected.has(d)));
+      // No save needed: the set of available dates is unchanged after flipping both
+      // the mode and the selection simultaneously.
+    },
+
+    // Returns the dates to send to the API (always the "available" dates).
+    _availableDates() {
+      if (!this.inverted) return Array.from(this.selected);
+      const all = Array.from(this.$el.querySelectorAll('[data-date]')).map(el => el.dataset.date);
+      return all.filter(d => !this.selected.has(d));
+    },
+
+    _scheduleSave() {
+      clearTimeout(this._saveTimer);
+      this._saveTimer = setTimeout(() => this._doSave(), 1200);
+    },
+
+    async _doSave() {
+      try {
+        await apiFetch('PUT', `/reunions/${this.reunionId}/availability/me`,
+          { dates: this._availableDates() });
+        showToast('Saved', 'success');
+      } catch (e) {
+        showToast(e.message, 'error');
+      }
     },
 
     // Attach non-passive touchmove so we can prevent scroll mid-drag
@@ -103,19 +142,9 @@ function availCalendar(initialDates) {
         e.preventDefault();
         const t = e.touches[0];
         const el = document.elementFromPoint(t.clientX, t.clientY);
-        const d = el?.dataset?.date;
+        const d = el?.closest('[data-date]')?.dataset?.date || el?.dataset?.date;
         if (d) self._applyDate(d);
       }, { passive: false });
-    },
-
-    async save(reunionId) {
-      try {
-        await apiFetch('PUT', `/reunions/${reunionId}/availability/me`,
-          { dates: Array.from(this.selected) });
-        showToast('Availability saved!', 'success');
-      } catch (e) {
-        showToast(e.message, 'error');
-      }
     },
   };
 }

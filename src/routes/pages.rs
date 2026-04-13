@@ -26,7 +26,6 @@ use crate::{
     error::AppError,
     models::{
         activity::{ActivityIdea, ActivitySummary},
-        announcement::Announcement,
         app_settings::AppSettings,
         availability::Availability,
         expense::Expense,
@@ -185,7 +184,6 @@ fn reunion_tabs(_reunion_id: Uuid, active_path: &str) -> Vec<NavTab> {
         ("activities",    "Activities",    2),
         ("schedule",      "Schedule",      2),
         ("media",         "Photos",        2),
-        ("announcements", "Announcements", 2),
     ];
     // Which group does the active tab belong to?
     let active_group = defs.iter()
@@ -254,15 +252,6 @@ fn build_calendar_months(start: NaiveDate, end: NaiveDate) -> Vec<CalendarMonth>
         };
     }
     months
-}
-
-// ── Heatmap view type ─────────────────────────────────────────────────────────
-
-pub struct HeatmapRow {
-    pub date: String,
-    pub count: i64,
-    pub total: i64,
-    pub pct: f64,
 }
 
 // ── Schedule view types ───────────────────────────────────────────────────────
@@ -448,7 +437,6 @@ struct ReunionOverviewPage {
     is_ra: bool,
     tabs: Vec<NavTab>,
     tab_label: &'static str,
-    announcements: Vec<Announcement>,
     /// How many distinct members have submitted availability for this reunion.
     avail_response_count: i64,
     /// Total active+verified members (denominator for progress fractions).
@@ -474,7 +462,6 @@ struct SettingsPage {
     is_sysadmin: bool,
     flash: Option<FlashMsg>,
     reunion: Reunion,
-    reunion_date: Option<ReunionDate>,
     tabs: Vec<NavTab>,
     tab_label: &'static str,
     /// All family units annotated with whether they're enrolled in this reunion.
@@ -495,7 +482,10 @@ struct AvailabilityPage {
     months: Vec<CalendarMonth>,
     editable: bool,
     is_ra: bool,
-    heatmap: Vec<HeatmapRow>,
+    /// JSON object mapping "YYYY-MM-DD" → member_count. Empty object for non-RAs.
+    heatmap_json: String,
+    /// Total respondents (denominator for heatmap colours).
+    heatmap_total: i64,
     tabs: Vec<NavTab>,
     tab_label: &'static str,
 }
@@ -591,19 +581,6 @@ struct SurveyPage {
     flash: Option<FlashMsg>,
     reunion: Reunion,
     questions: Vec<SurveyQuestionView>,
-    is_ra: bool,
-    tabs: Vec<NavTab>,
-    tab_label: &'static str,
-}
-
-#[derive(Template)]
-#[template(path = "pages/announcements.html")]
-struct AnnouncementsPage {
-    user_name: String,
-    is_sysadmin: bool,
-    flash: Option<FlashMsg>,
-    reunion: Reunion,
-    announcements: Vec<Announcement>,
     is_ra: bool,
     tabs: Vec<NavTab>,
     tab_label: &'static str,
@@ -1166,13 +1143,6 @@ pub async fn reunion_overview(
         }
     }
 
-    let announcements = Announcement::list_for_reunion(state.db(), reunion_id)
-        .await
-        .unwrap_or_default()
-        .into_iter()
-        .take(3)
-        .collect();
-
     let avail_response_count = sqlx::query_scalar::<_, i64>(
         "SELECT COUNT(DISTINCT user_id) FROM availability WHERE reunion_id = $1",
     )
@@ -1221,7 +1191,6 @@ pub async fn reunion_overview(
         reunion,
         reunion_date,
         is_ra,
-        announcements,
         avail_response_count,
         member_count,
         location_count,
@@ -1273,28 +1242,21 @@ pub async fn availability_page(
 
     let editable = matches!(reunion.phase, Phase::Availability);
 
-    // Heatmap (RA only)
-    let heatmap = if is_ra {
+    // Heatmap (RA only) — build a JSON map {date: count} for the template
+    let (heatmap_json, heatmap_total) = if is_ra {
         let total = Availability::respondent_count(state.db(), reunion_id)
             .await
-            .unwrap_or(1)
-            .max(1);
-        Availability::heatmap(state.db(), reunion_id)
+            .unwrap_or(0);
+        let entries = Availability::heatmap(state.db(), reunion_id)
             .await
-            .unwrap_or_default()
+            .unwrap_or_default();
+        let map: std::collections::HashMap<String, i64> = entries
             .into_iter()
-            .map(|e| {
-                let pct = (e.member_count as f64 / total as f64 * 100.0).min(100.0);
-                HeatmapRow {
-                    date: e.available_date.format("%a, %b %d").to_string(),
-                    count: e.member_count,
-                    total,
-                    pct,
-                }
-            })
-            .collect()
+            .map(|e| (e.available_date.format("%Y-%m-%d").to_string(), e.member_count))
+            .collect();
+        (serde_json::to_string(&map).unwrap_or_else(|_| "{}".into()), total)
     } else {
-        vec![]
+        ("{}".into(), 0)
     };
 
     Ok(AvailabilityPage {
@@ -1309,7 +1271,8 @@ pub async fn availability_page(
         months,
         editable,
         is_ra,
-        heatmap,
+        heatmap_json,
+        heatmap_total,
     }
     .into_response())
 }
@@ -1758,35 +1721,6 @@ pub async fn survey_page(
     .into_response())
 }
 
-// ── GET /reunions/:id/announcements ───────────────────────────────────────────
-
-pub async fn announcements_page(
-    session: Session,
-    State(state): State<AppState>,
-    SlugOrId(reunion_id): SlugOrId,
-) -> Result<Response, Response> {
-    let user = require_login(&session, &state).await?;
-    let reunion = helpers::load_reunion_for_member(&state, &user, reunion_id).await?;
-    let flash = take_flash(&session).await;
-    let is_ra = helpers::user_is_ra(&state, &user, reunion_id).await;
-
-    let announcements = Announcement::list_for_reunion(state.db(), reunion_id)
-        .await
-        .unwrap_or_default();
-
-    Ok(AnnouncementsPage {
-        user_name: user.display_name.clone(),
-        is_sysadmin: user.is_sysadmin(),
-        flash,
-        tabs: reunion_tabs(reunion_id, "announcements"),
-        tab_label: "Announcements",
-        reunion,
-        announcements,
-        is_ra,
-    }
-    .into_response())
-}
-
 // ── GET /reunions/:id/settings ────────────────────────────────────────────────
 
 pub async fn settings_page(
@@ -1802,7 +1736,6 @@ pub async fn settings_page(
         return Err(Redirect::to(&format!("/reunions/{}", reunion_id)).into_response());
     }
     let flash = take_flash(&session).await;
-    let reunion_date = ReunionDate::find_for_reunion(state.db(), reunion_id).await.ok().flatten();
     let raw_family_units = FamilyUnit::list_all(state.db()).await.unwrap_or_default();
     let enrolled_ids = ReunionFamilyUnit::list_ids_for_reunion(state.db(), reunion_id)
         .await
@@ -1833,7 +1766,6 @@ pub async fn settings_page(
         tabs: reunion_tabs(reunion_id, "settings"),
         tab_label: "Settings",
         reunion,
-        reunion_date,
         family_units,
         all_users_with_ra,
     }

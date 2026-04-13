@@ -5,11 +5,36 @@
 {% block reunion_content %}
 <div class="mb-6">
   <h1 class="text-2xl font-bold text-gray-900">Your Availability</h1>
-  <p class="mt-1 text-gray-500 text-sm">Click or click-and-drag to mark dates. Save when done.</p>
+  <p class="mt-1 text-gray-500 text-sm">Click or drag to mark dates. Changes are saved automatically.</p>
 </div>
 
-<div x-data="availCalendar({{ my_dates_json }})" class="space-y-6"
-     @mouseup.window="stopDrag()" @touchend.window="stopDrag()">
+<div x-data="availCalendar({{ my_dates_json }}, '{{ reunion.id }}')"
+     :class="{'is-inverted': inverted}"
+     class="space-y-6"
+     @mouseup.window="stopDrag()"
+     @touchend.window="stopDrag()">
+
+  {% if editable %}
+  <!-- Mode toggle -->
+  <div class="flex items-center gap-3 bg-white rounded-xl border border-gray-100 shadow-sm px-4 py-3">
+    <label class="flex items-center gap-2.5 cursor-pointer select-none">
+      <input type="checkbox" x-model="inverted" @change="onInvertedChange()"
+             class="w-4 h-4 rounded border-gray-300 accent-red-500">
+      <span class="text-sm font-medium" :class="inverted ? 'text-red-600' : 'text-gray-700'">
+        Mark days I'm <span x-text="inverted ? 'NOT' : ''"></span> available
+      </span>
+    </label>
+    <span x-show="inverted"
+          class="text-xs text-red-600 bg-red-50 border border-red-200 px-2 py-0.5 rounded-full font-medium">
+      Red = unavailable
+    </span>
+    <span x-show="!inverted"
+          class="text-xs text-teal-700 bg-teal-50 border border-teal-200 px-2 py-0.5 rounded-full font-medium">
+      Green = available
+    </span>
+  </div>
+  {% endif %}
+
   {% for month in months %}
   <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
     <h2 class="text-base font-semibold text-gray-800 mb-3">{{ month.name }}</h2>
@@ -26,7 +51,7 @@
         type="button"
         data-date="{{ ds }}"
         class="day-avail rounded-lg p-2 text-sm select-none"
-        :class="isSelected('{{ ds }}') ? 'sel' : ''"
+        :class="isSelected('{{ ds }}') ? (inverted ? 'inv-sel' : 'sel') : ''"
         @mousedown.prevent="startDrag('{{ ds }}')"
         @mouseenter="applyDrag('{{ ds }}')"
         @touchstart.prevent="startDrag('{{ ds }}')"
@@ -42,14 +67,6 @@
   </div>
   {% endfor %}
 
-  {% if editable %}
-  <div class="flex justify-end">
-    <button @click="save('{{ reunion.id }}')"
-            class="px-6 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold rounded-lg transition-colors">
-      Save availability
-    </button>
-  </div>
-  {% endif %}
 </div>
 
 {% if is_ra %}
@@ -182,24 +199,91 @@ document.getElementById('set-dates-form').addEventListener('submit', async (e) =
   </div>
 </div>
 
-<!-- RA: Availability heatmap -->
+<!-- RA: Group availability heatmap calendar -->
 <div class="mt-4 bg-white rounded-xl border border-gray-100 shadow-sm p-5">
-  <h2 class="font-semibold text-gray-900 mb-3">Availability Heatmap</h2>
-  {% if heatmap.is_empty() %}
+  <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+    <h2 class="font-semibold text-gray-900">Group Availability</h2>
+    <!-- Legend -->
+    <div class="flex items-center gap-3 text-xs text-gray-500">
+      <span class="flex items-center gap-1.5">
+        <span class="w-4 h-4 rounded" style="background:#f3f4f6; border:1px solid #e5e7eb"></span>None
+      </span>
+      <span class="flex items-center gap-1.5">
+        <span class="w-4 h-4 rounded" style="background:#fef9c3"></span>Few
+      </span>
+      <span class="flex items-center gap-1.5">
+        <span class="w-4 h-4 rounded" style="background:#fde68a"></span>Some
+      </span>
+      <span class="flex items-center gap-1.5">
+        <span class="w-4 h-4 rounded" style="background:#f59e0b"></span>Most
+      </span>
+      <span class="flex items-center gap-1.5">
+        <span class="w-4 h-4 rounded" style="background:#16a34a"></span>All
+      </span>
+    </div>
+  </div>
+
+  {% if heatmap_total == 0 %}
   <p class="text-sm text-gray-400">No responses yet.</p>
   {% else %}
-  <div class="space-y-1">
-    {% for entry in heatmap %}
-    <div class="flex items-center gap-3">
-      <span class="text-sm text-gray-600 w-28 flex-shrink-0">{{ entry.date }}</span>
-      <div class="flex-1 bg-gray-100 rounded-full h-3 overflow-hidden">
-        <div class="h-full bg-amber-400 rounded-full" style="width: {{ entry.pct }}%"></div>
+  <div class="space-y-6">
+    {% for month in months %}
+    <div>
+      <h3 class="text-sm font-semibold text-gray-700 mb-2">{{ month.name }}</h3>
+      <div class="grid grid-cols-7 gap-1 text-center text-xs text-gray-400 mb-1">
+        <div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div><div>Sun</div>
       </div>
-      <span class="text-xs text-gray-500 w-12 text-right">{{ entry.count }} / {{ entry.total }}</span>
+      {% for week in month.weeks %}
+      <div class="grid grid-cols-7 gap-1">
+        {% for day_opt in week %}
+        {% match day_opt %}
+        {% when Some with (d) %}
+        {% let ds = d.format("%Y-%m-%d").to_string() %}
+        <div class="hmap-cell rounded-lg p-2 text-center select-none"
+             data-date="{{ ds }}">{{ d.day() }}</div>
+        {% when None %}
+        <div></div>
+        {% endmatch %}
+        {% endfor %}
+      </div>
+      {% endfor %}
     </div>
     {% endfor %}
   </div>
+  <p class="mt-3 text-xs text-gray-400">
+    Based on {{ heatmap_total }} response{% if heatmap_total != 1 %}s{% endif %} so far.
+    Green = everyone who responded is free that day.
+  </p>
   {% endif %}
 </div>
+
+<div id="hm-data" hidden data-hm="{{ heatmap_json }}" data-total="{{ heatmap_total }}"></div>
+<script>
+(function() {
+  const hmEl = document.getElementById('hm-data');
+  if (!hmEl) return;
+  const hm = JSON.parse(hmEl.dataset.hm);
+  const total = parseInt(hmEl.dataset.total, 10) || 0;
+  if (total === 0) return;
+
+  function hmColor(count, t) {
+    if (count === 0) return { bg: '#f3f4f6', fg: '#9ca3af' };
+    if (count >= t)  return { bg: '#16a34a', fg: '#ffffff' }; // all → green
+    const pct = count / t;
+    if (pct < 0.35)  return { bg: '#fef9c3', fg: '#78350f' }; // few
+    if (pct < 0.65)  return { bg: '#fde68a', fg: '#78350f' }; // some
+    return                   { bg: '#f59e0b', fg: '#ffffff' }; // most
+  }
+
+  document.querySelectorAll('.hmap-cell[data-date]').forEach(cell => {
+    const count = hm[cell.dataset.date] || 0;
+    const { bg, fg } = hmColor(count, total);
+    cell.style.backgroundColor = bg;
+    cell.style.color = fg;
+    if (count > 0) cell.style.fontWeight = '600';
+    cell.title = `${count} of ${total} available`;
+  });
+})();
+</script>
 {% endif %}
 {% endblock %}

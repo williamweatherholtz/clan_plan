@@ -128,8 +128,13 @@ body {
 /* ── Availability calendar ───────────────────────────────────────────────── */
 .day-avail { cursor: pointer; transition: background-color 0.1s ease; }
 .day-avail.sel { background-color: var(--primary) !important; color: white; font-weight: 700; }
-.day-avail:hover:not(.sel) { background-color: var(--primary-lt); }
+.day-avail:hover:not(.sel):not([disabled]) { background-color: var(--primary-lt); }
 .day-disabled { pointer-events: none; color: #D1D5DB; }
+/* Inverted mode: selected = unavailable (red) */
+.is-inverted .day-avail.inv-sel { background-color: #ef4444 !important; color: white; font-weight: 700; }
+.is-inverted .day-avail:hover:not(.inv-sel):not([disabled]) { background-color: #fee2e2; }
+/* Heatmap calendar cells */
+.hmap-cell { transition: background-color 0.1s ease; font-size: 0.8125rem; }
 
 /* ── Range input ─────────────────────────────────────────────────────────── */
 input[type="range"] { accent-color: var(--primary); }
@@ -305,5 +310,7 @@ main > *:nth-child(4) { animation-delay: 0.15s; }
 .dark .shadow-xl { box-shadow: 0 20px 25px rgba(0,0,0,0.6); }
 
 /* availability calendar */
-.dark .day-avail:hover:not(.sel) { background-color: var(--primary-lt); }
+.dark .day-avail:hover:not(.sel):not([disabled]) { background-color: var(--primary-lt); }
 .dark .day-disabled { color: #4B5563; }
+.dark .is-inverted .day-avail.inv-sel { background-color: #dc2626 !important; }
+.dark .is-inverted .day-avail:hover:not(.inv-sel):not([disabled]) { background-color: #450a0a; }

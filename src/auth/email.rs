@@ -79,32 +79,6 @@ impl Mailer {
         self.send(to_email, "Reset your Clan Plan password", &body).await
     }
 
-    pub async fn send_announcement_email(
-        &self,
-        to_email: &str,
-        display_name: &str,
-        reunion_title: &str,
-        announcement_title: &str,
-        announcement_content: &str,
-        app_url: &str,
-    ) -> anyhow::Result<()> {
-        let body = format!(
-            "Hi {display_name},\n\n\
-             New announcement for \"{reunion_title}\":\n\n\
-             {announcement_title}\n\
-             {}\n\n\
-             {announcement_content}\n\n\
-             Visit Clan Plan:\n{app_url}\n",
-            "─".repeat(announcement_title.len())
-        );
-        self.send(
-            to_email,
-            &format!("[{reunion_title}] {announcement_title}"),
-            &body,
-        )
-        .await
-    }
-
     pub async fn send_phase_notification(
         &self,
         to_email: &str,

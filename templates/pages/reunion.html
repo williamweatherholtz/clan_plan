@@ -43,23 +43,6 @@
 </div>
 {% endif %}
 
-<!-- Recent announcements -->
-{% if !announcements.is_empty() %}
-<div class="mb-5">
-  <h2 class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Announcements</h2>
-  <div class="space-y-3">
-    {% for ann in announcements %}
-    <div class="card p-4">
-      <h3 class="font-semibold text-gray-900">{{ ann.title }}</h3>
-      <p class="text-sm text-gray-600 mt-1">{{ ann.content }}</p>
-    </div>
-    {% endfor %}
-  </div>
-  <a href="{{ base_url }}/announcements"
-     class="mt-2 inline-block text-sm text-indigo-600 hover:text-indigo-500 transition-colors">View all →</a>
-</div>
-{% endif %}
-
 <!-- ── Open tracks ──────────────────────────────────────────────────────────── -->
 <!-- Each "track" is a card showing aggregate progress + personal status.       -->
 <!-- Personal status (done/pending) is loaded via JS from /api/.../my-completion -->

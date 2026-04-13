@@ -50,28 +50,33 @@
     </form>
   </div>
 
-  <!-- Reunion dates -->
+  <!-- Potential date range (availability poll window) -->
   <div class="card p-5">
-    <h2 class="text-base font-semibold text-gray-800 mb-4">Reunion Dates</h2>
+    <h2 class="text-base font-semibold text-gray-800 mb-1">Potential Date Range</h2>
+    <p class="text-sm text-gray-500 mb-4">Sets the date range shown in the availability calendar so members know which dates to mark.</p>
     <form id="dates-form" class="space-y-4">
       <div class="grid grid-cols-2 gap-3">
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">Start date</label>
           <input id="settings-start" type="date"
-                 value="{% if let Some(rd) = reunion_date %}{{ rd.start_date }}{% endif %}"
+                 value="{% if let Some(s) = reunion.avail_poll_start %}{{ s }}{% endif %}"
                  class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
         </div>
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">End date</label>
           <input id="settings-end" type="date"
-                 value="{% if let Some(rd) = reunion_date %}{{ rd.end_date }}{% endif %}"
+                 value="{% if let Some(e) = reunion.avail_poll_end %}{{ e }}{% endif %}"
                  class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
         </div>
       </div>
-      <div class="flex justify-end">
+      <div class="flex items-center justify-between">
+        <button type="button" id="dates-clear-btn"
+                class="px-3 py-2 text-sm font-medium text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-50 {% if reunion.avail_poll_start.is_none() %}invisible{% endif %}">
+          Clear
+        </button>
         <button type="submit"
                 class="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold rounded-lg">
-          Set dates
+          Save range
         </button>
       </div>
     </form>
@@ -198,11 +203,22 @@ document.getElementById('dates-form').addEventListener('submit', async (e) => {
   const end   = document.getElementById('settings-end').value;
   if (!start || !end) { showToast('Both dates are required', 'error'); return; }
   try {
-    await apiFetch('POST', '/reunions/{{ reunion.id }}/dates', {
-      start_date: start,
-      end_date: end,
+    await apiFetch('PATCH', '/reunions/{{ reunion.id }}', {
+      avail_poll_start: start,
+      avail_poll_end: end,
     });
-    showToast('Dates saved', 'success');
+    showToast('Date range saved', 'success');
+    document.getElementById('dates-clear-btn').classList.remove('invisible');
+  } catch (err) { showToast(err.message, 'error'); }
+});
+
+document.getElementById('dates-clear-btn').addEventListener('click', async () => {
+  try {
+    await apiFetch('PATCH', '/reunions/{{ reunion.id }}', { clear_avail_poll: true });
+    document.getElementById('settings-start').value = '';
+    document.getElementById('settings-end').value = '';
+    document.getElementById('dates-clear-btn').classList.add('invisible');
+    showToast('Date range cleared', 'success');
   } catch (err) { showToast(err.message, 'error'); }
 });
 
@@ -217,7 +233,7 @@ async function archiveReunion(id) {
 
 async function deleteReunion(id) {
   if (!confirm('Permanently delete this reunion and ALL its data? This cannot be undone.')) return;
-  if (!confirm('Are you absolutely sure? All photos, expenses, and announcements will be gone forever.')) return;
+  if (!confirm('Are you absolutely sure? All photos, expenses, and activities will be gone forever.')) return;
   try {
     await apiFetch('DELETE', '/reunions/' + id);
     showToast('Reunion deleted', 'success');

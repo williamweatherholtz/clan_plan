@@ -1,6 +1,5 @@
 pub mod activities;
 pub mod admin;
-pub mod announcements;
 pub mod auth;
 pub mod availability;
 pub mod expenses;
@@ -137,11 +136,6 @@ pub fn reunions_router() -> Router<AppState> {
                                            patch(feedback::update_survey_response)
                                           .delete(feedback::delete_survey_response))
         .route("/:id/survey/responses",    get(feedback::list_survey_responses))
-        // ── Announcements ─────────────────────────────────────────────────────
-        .route("/:id/announcements",       get(announcements::list_announcements)
-                                              .post(announcements::create_announcement))
-        .route("/:id/announcements/:ann_id",
-                                           delete(announcements::delete_announcement))
 }
 
 pub fn pages_router() -> Router<AppState> {
@@ -170,7 +164,6 @@ pub fn pages_router() -> Router<AppState> {
         .route("/reunions/:id/media",               get(pages::media_page))
         .route("/reunions/:id/expenses",            get(pages::expenses_page))
         .route("/reunions/:id/survey",              get(pages::survey_page))
-        .route("/reunions/:id/announcements",       get(pages::announcements_page))
         .route("/reunions/:id/settings",            get(pages::settings_page))
         // Slug-based aliases: /r/:slug/... mirrors /reunions/:id/...
         .route("/r/:slug",                          get(pages::reunion_overview))
@@ -182,6 +175,5 @@ pub fn pages_router() -> Router<AppState> {
         .route("/r/:slug/media",                    get(pages::media_page))
         .route("/r/:slug/expenses",                 get(pages::expenses_page))
         .route("/r/:slug/survey",                   get(pages::survey_page))
-        .route("/r/:slug/announcements",            get(pages::announcements_page))
         .route("/r/:slug/settings",                 get(pages::settings_page))
 }
