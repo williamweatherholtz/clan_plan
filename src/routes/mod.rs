@@ -150,6 +150,8 @@ pub fn pages_router() -> Router<AppState> {
         .route("/assets/*path",                     get(pages::serve_asset))
         // Root redirect
         .route("/",                                 get(pages::index))
+        // Invite join link
+        .route("/join/:token",                      get(pages::join_page))
         // Auth pages (HTML form flows)
         .route("/login",                            get(pages::login_page).post(pages::login_form))
         .route("/register",                         get(pages::register_page).post(pages::register_form))

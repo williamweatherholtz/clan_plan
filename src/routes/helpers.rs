@@ -39,18 +39,29 @@ pub async fn ensure_ra(user: &User, state: &AppState, reunion_id: Uuid) -> AppRe
 /// - Sysadmins always may.
 /// - RAs always may (any phase, including Draft).
 /// - Draft phase: RA/sysadmin only.
-/// - Other phases: any user whose family unit is enrolled.
+/// - Other phases: any user whose family unit is enrolled, or who joined via invite link.
 pub async fn user_is_reunion_member(state: &AppState, user: &User, reunion: &Reunion) -> bool {
     if user.is_sysadmin() { return true; }
     if user_is_ra(state, user, reunion.id).await { return true; }
     if reunion.phase == Phase::Draft { return false; }
     if let Some(fu_id) = user.family_unit_id {
-        return ReunionFamilyUnit::list_ids_for_reunion(state.db(), reunion.id)
+        if ReunionFamilyUnit::list_ids_for_reunion(state.db(), reunion.id)
             .await
             .map(|ids| ids.contains(&fu_id))
-            .unwrap_or(false);
+            .unwrap_or(false)
+        {
+            return true;
+        }
     }
-    false
+    // Also allow users who joined via an invite link (reunion_invite_members).
+    sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM reunion_invite_members WHERE reunion_id = $1 AND user_id = $2)",
+    )
+    .bind(reunion.id)
+    .bind(user.id)
+    .fetch_one(state.db())
+    .await
+    .unwrap_or(false)
 }
 
 /// Returns the IANA timezone string for the reunion's selected location, or "UTC".

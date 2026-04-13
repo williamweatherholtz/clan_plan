@@ -82,6 +82,61 @@
     </form>
   </div>
 
+  <!-- Invite Links -->
+  <div class="card p-5">
+    <div class="flex items-start justify-between mb-3">
+      <div>
+        <h2 class="text-base font-semibold text-gray-800">Invite Links</h2>
+        <p class="text-sm text-gray-500 mt-0.5">Share a link to give someone direct access to this reunion.</p>
+      </div>
+      <button onclick="generateInvite()"
+              class="ml-4 flex-shrink-0 px-3 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold rounded-lg transition-colors">
+        + New link
+      </button>
+    </div>
+
+    <div id="invites-list" class="space-y-2 mb-1">
+      {% for inv in invites %}
+      <div class="flex items-center gap-2 p-2 bg-gray-50 rounded-lg border border-gray-100" id="invite-{{ inv.id }}">
+        <input type="text" readonly value="{{ inv.join_url }}"
+               onclick="this.select()"
+               class="flex-1 min-w-0 text-xs text-gray-600 bg-transparent border-none outline-none font-mono cursor-pointer">
+        <button onclick="copyInvite('{{ inv.join_url }}')"
+                class="flex-shrink-0 px-2 py-1 text-xs font-medium text-gray-600 border border-gray-200 rounded hover:bg-white transition-colors">
+          Copy
+        </button>
+        <button onclick="revokeInvite('{{ inv.id }}')"
+                class="flex-shrink-0 px-2 py-1 text-xs font-medium text-red-500 border border-red-100 rounded hover:bg-red-50 transition-colors">
+          Revoke
+        </button>
+      </div>
+      {% else %}
+      <p class="text-sm text-gray-400 italic" id="no-invites-msg">No active invite links.</p>
+      {% endfor %}
+    </div>
+
+    {% if !invite_members.is_empty() %}
+    <div class="border-t border-gray-100 pt-4 mt-4">
+      <h3 class="text-sm font-semibold text-gray-700 mb-1">Unassigned Members</h3>
+      <p class="text-xs text-gray-400 mb-3">Joined via invite but not yet in a family unit.</p>
+      <div class="space-y-2">
+        {% for member in invite_members %}
+        <div class="flex items-center justify-between" id="imember-{{ member.user_id }}">
+          <span class="text-sm text-gray-700">
+            {{ member.display_name }}
+            <span class="text-xs text-gray-400 ml-1">({{ member.email }})</span>
+          </span>
+          <button onclick="removeInviteMember('{{ member.user_id }}')"
+                  class="px-2 py-1 text-xs font-medium text-red-500 border border-red-100 rounded hover:bg-red-50 transition-colors">
+            Remove
+          </button>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
   <!-- Phase control -->
   <div class="card p-5">
     <h2 class="text-base font-semibold text-gray-800 mb-1">Phase</h2>
@@ -221,6 +276,54 @@ document.getElementById('dates-clear-btn').addEventListener('click', async () =>
     showToast('Date range cleared', 'success');
   } catch (err) { showToast(err.message, 'error'); }
 });
+
+async function generateInvite() {
+  try {
+    const data = await apiFetch('POST', '/reunions/{{ reunion.id }}/invites', null);
+    const list = document.getElementById('invites-list');
+    const noMsg = document.getElementById('no-invites-msg');
+    if (noMsg) noMsg.remove();
+    const row = document.createElement('div');
+    row.id = 'invite-' + data.id;
+    row.className = 'flex items-center gap-2 p-2 bg-gray-50 rounded-lg border border-gray-100';
+    row.innerHTML = `
+      <input type="text" readonly value="${data.join_url}" onclick="this.select()"
+             class="flex-1 min-w-0 text-xs text-gray-600 bg-transparent border-none outline-none font-mono cursor-pointer">
+      <button onclick="copyInvite('${data.join_url}')"
+              class="flex-shrink-0 px-2 py-1 text-xs font-medium text-gray-600 border border-gray-200 rounded hover:bg-white transition-colors">Copy</button>
+      <button onclick="revokeInvite('${data.id}')"
+              class="flex-shrink-0 px-2 py-1 text-xs font-medium text-red-500 border border-red-100 rounded hover:bg-red-50 transition-colors">Revoke</button>
+    `;
+    list.appendChild(row);
+    showToast('Invite link created', 'success');
+  } catch (err) { showToast(err.message, 'error'); }
+}
+
+function copyInvite(url) {
+  navigator.clipboard.writeText(url)
+    .then(() => showToast('Copied to clipboard', 'success'))
+    .catch(() => showToast('Copy failed', 'error'));
+}
+
+async function revokeInvite(inviteId) {
+  if (!confirm('Revoke this invite link? Anyone who has it won\'t be able to use it to join.')) return;
+  try {
+    await apiFetch('DELETE', `/reunions/{{ reunion.id }}/invites/${inviteId}`, null);
+    const row = document.getElementById('invite-' + inviteId);
+    if (row) row.remove();
+    showToast('Invite link revoked', 'success');
+  } catch (err) { showToast(err.message, 'error'); }
+}
+
+async function removeInviteMember(userId) {
+  if (!confirm('Remove this member from the reunion?')) return;
+  try {
+    await apiFetch('DELETE', `/reunions/{{ reunion.id }}/invite-members/${userId}`, null);
+    const row = document.getElementById('imember-' + userId);
+    if (row) row.remove();
+    showToast('Member removed', 'success');
+  } catch (err) { showToast(err.message, 'error'); }
+}
 
 async function archiveReunion(id) {
   if (!confirm('Archive this reunion? It will be read-only.')) return;

@@ -21,7 +21,7 @@ use uuid::Uuid;
 use crate::{
     auth::{
         password as pwd,
-        session::{get_or_create_csrf_token, save_user_id, validate_csrf, SESSION_USER_ID},
+        session::{get_or_create_csrf_token, save_user_id, validate_csrf, PENDING_INVITE_KEY, SESSION_USER_ID},
     },
     error::AppError,
     models::{
@@ -30,6 +30,7 @@ use crate::{
         availability::Availability,
         expense::Expense,
         feedback::{SurveyQuestion, SurveyResponse},
+        invite::{InviteMember, ReunionInvite},
         reunion::{Reunion, ReunionAdmin, ReunionDate, ReunionFamilyUnit},
         location::{LocationCandidate, VoteWithName},
         media::Media,
@@ -359,6 +360,14 @@ pub struct StorageStatsView {
     pub total_mb: String,
 }
 
+// ── Invite view ───────────────────────────────────────────────────────────────
+
+pub struct InviteWithUrl {
+    pub id: Uuid,
+    pub join_url: String,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
 // ============================================================================
 // ── Template structs ─────────────────────────────────────────────────────────
 // ============================================================================
@@ -468,6 +477,18 @@ struct SettingsPage {
     family_units: Vec<FamilyUnitWithEnrolled>,
     /// All users annotated with whether they are currently an RA for this reunion.
     all_users_with_ra: Vec<UserWithRaStatus>,
+    /// Active invite links for this reunion (RA-generated).
+    invites: Vec<InviteWithUrl>,
+    /// Members who joined via invite link and haven't been assigned to a family unit.
+    invite_members: Vec<InviteMember>,
+}
+
+#[derive(Template)]
+#[template(path = "pages/join.html")]
+struct JoinPage {
+    flash: Option<FlashMsg>,
+    reunion_title: String,
+    google_enabled: bool,
 }
 
 #[derive(Template)]
@@ -649,7 +670,7 @@ pub async fn login_form(
     State(state): State<AppState>,
     Form(form): Form<LoginForm>,
 ) -> impl IntoResponse {
-    let result: Result<(), &str> = async {
+    let result: Result<User, &str> = async {
         let user = User::find_by_email(state.db(), &form.email)
             .await
             .map_err(|_| "Internal error")?
@@ -666,12 +687,29 @@ pub async fn login_form(
         }
 
         save_user_id(&session, user.id).await.map_err(|_| "Internal error")?;
-        Ok(())
+        Ok(user)
     }
     .await;
 
     match result {
-        Ok(()) => Redirect::to("/dashboard").into_response(),
+        Ok(user) => {
+            // Check for a pending invite stored when the user visited /join/:token
+            let pending: Option<String> = session.get(PENDING_INVITE_KEY).await.ok().flatten();
+            if let Some(token) = pending {
+                let _ = session.remove::<String>(PENDING_INVITE_KEY).await;
+                if let Ok(invite) = ReunionInvite::find_by_token(state.db(), &token).await {
+                    let _ = ReunionInvite::redeem(state.db(), &invite, user.id).await;
+                    if let Ok(reunion) = Reunion::find_by_id(state.db(), invite.reunion_id).await {
+                        let url = match &reunion.slug {
+                            Some(s) => format!("/r/{}", s),
+                            None => format!("/reunions/{}", reunion.id),
+                        };
+                        return Redirect::to(&url).into_response();
+                    }
+                }
+            }
+            Redirect::to("/dashboard").into_response()
+        }
         Err(msg) => {
             set_flash(&session, "error", msg).await;
             Redirect::to("/login").into_response()
@@ -930,13 +968,22 @@ pub async fn dashboard(
         vec![]
     };
 
+    let user_invite_ids: Vec<Uuid> = sqlx::query_scalar(
+        "SELECT reunion_id FROM reunion_invite_members WHERE user_id = $1",
+    )
+    .bind(user.id)
+    .fetch_all(state.db())
+    .await
+    .unwrap_or_default();
+
     let all = Reunion::list_all(state.db()).await.unwrap_or_default();
 
     // Filter to reunions accessible to this user.
     let accessible: Vec<&Reunion> = all.iter().filter(|r| {
         if user.is_sysadmin() { return true; }
         let is_ra = user_ra_ids.contains(&r.id);
-        if r.phase == Phase::Draft { is_ra } else { is_ra || user_enrolled_ids.contains(&r.id) }
+        if r.phase == Phase::Draft { return is_ra; }
+        is_ra || user_enrolled_ids.contains(&r.id) || user_invite_ids.contains(&r.id)
     }).collect();
 
     // If the user has exactly one accessible reunion and it is not in Draft, go straight to it.
@@ -1759,6 +1806,21 @@ pub async fn settings_page(
         })
         .collect();
 
+    let invites_raw = ReunionInvite::list_for_reunion(state.db(), reunion_id)
+        .await
+        .unwrap_or_default();
+    let base_url = &state.config().app_base_url;
+    let invites: Vec<InviteWithUrl> = invites_raw
+        .into_iter()
+        .map(|inv| {
+            let join_url = format!("{}/join/{}", base_url, inv.token);
+            InviteWithUrl { id: inv.id, join_url, created_at: inv.created_at }
+        })
+        .collect();
+    let invite_members = ReunionInvite::list_members(state.db(), reunion_id)
+        .await
+        .unwrap_or_default();
+
     Ok(SettingsPage {
         user_name: user.display_name.clone(),
         is_sysadmin: user.is_sysadmin(),
@@ -1768,6 +1830,8 @@ pub async fn settings_page(
         reunion,
         family_units,
         all_users_with_ra,
+        invites,
+        invite_members,
     }
     .into_response())
 }
@@ -1840,4 +1904,48 @@ pub async fn admin_page(
         registration_enabled,
     }
     .into_response())
+}
+
+// ── GET /join/:token ──────────────────────────────────────────────────────────
+
+pub async fn join_page(
+    session: Session,
+    State(state): State<AppState>,
+    Path(token): Path<String>,
+) -> impl IntoResponse {
+    // Validate the token first.
+    let invite = match ReunionInvite::find_by_token(state.db(), &token).await {
+        Ok(inv) => inv,
+        Err(_) => {
+            set_flash(&session, "error", "This invite link is invalid or has expired.").await;
+            return Redirect::to("/login").into_response();
+        }
+    };
+    let reunion = match Reunion::find_by_id(state.db(), invite.reunion_id).await {
+        Ok(r) => r,
+        Err(_) => {
+            set_flash(&session, "error", "This invite link is invalid or has expired.").await;
+            return Redirect::to("/login").into_response();
+        }
+    };
+
+    // If already logged in, redeem immediately and redirect to the reunion.
+    if let Some(user) = current_user_opt(&session, &state).await {
+        let _ = ReunionInvite::redeem(state.db(), &invite, user.id).await;
+        let url = match &reunion.slug {
+            Some(s) => format!("/r/{}", s),
+            None => format!("/reunions/{}", reunion.id),
+        };
+        return Redirect::to(&url).into_response();
+    }
+
+    // Not logged in — persist the token in the session so login_form can redeem it.
+    let _ = session.insert(PENDING_INVITE_KEY, &token).await;
+    let flash = take_flash(&session).await;
+    JoinPage {
+        flash,
+        reunion_title: reunion.title.clone(),
+        google_enabled: state.config().google_oauth_enabled(),
+    }
+    .into_response()
 }
