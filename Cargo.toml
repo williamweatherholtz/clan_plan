@@ -39,6 +39,7 @@ rust-embed = "8"
 argon2 = "0.5"
 oauth2 = "4"
 base64 = "0.21"
+subtle = "2"
 
 # Email
 lettre = { version = "0.11", features = ["tokio1-native-tls", "builder"] }

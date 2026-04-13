@@ -81,6 +81,12 @@ pub async fn create_activity(
     if body.title.trim().is_empty() {
         return Err(AppError::BadRequest("title cannot be empty".into()));
     }
+    if body.title.len() > 200 {
+        return Err(AppError::BadRequest("title cannot exceed 200 characters".into()));
+    }
+    if body.description.as_deref().map(|d| d.len()).unwrap_or(0) > 5_000 {
+        return Err(AppError::BadRequest("description cannot exceed 5,000 characters".into()));
+    }
 
     let idea = ActivityIdea::create(state.db(), reunion_id, user.id, body).await?;
     Ok((StatusCode::CREATED, Json(idea)))
@@ -134,6 +140,9 @@ pub async fn create_comment(
 
     if body.content.trim().is_empty() {
         return Err(AppError::BadRequest("comment cannot be empty".into()));
+    }
+    if body.content.len() > 2_000 {
+        return Err(AppError::BadRequest("comment cannot exceed 2,000 characters".into()));
     }
 
     let idea = ActivityIdea::find_by_id(state.db(), act_id).await?;

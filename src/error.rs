@@ -42,7 +42,13 @@ impl IntoResponse for AppError {
             AppError::Forbidden => (StatusCode::FORBIDDEN, self.to_string()),
             AppError::BadRequest(m) => (StatusCode::BAD_REQUEST, m.clone()),
             AppError::Conflict(m) => (StatusCode::CONFLICT, m.clone()),
-            AppError::WrongPhase { .. } => (StatusCode::CONFLICT, self.to_string()),
+            AppError::WrongPhase { required, current } => {
+                tracing::debug!("wrong phase: required={required}, current={current}");
+                (
+                    StatusCode::CONFLICT,
+                    "this action is not available at the current reunion stage".into(),
+                )
+            }
             AppError::Database(e) => {
                 tracing::error!("database error: {:?}", e);
                 (StatusCode::INTERNAL_SERVER_ERROR, "database error".into())

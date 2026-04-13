@@ -126,7 +126,9 @@ pub async fn download_media(
         return Err(AppError::NotFound);
     }
 
-    let abs_path = PathBuf::from(&state.config().media_storage_path).join(&media.file_path);
+    let abs_path = safe_media_path(&state.config().media_storage_path, &media.file_path)
+        .await
+        .ok_or(AppError::NotFound)?;
     let bytes = fs::read(&abs_path)
         .await
         .map_err(|e| AppError::Internal(anyhow::anyhow!("read file: {e}")))?;
@@ -163,7 +165,9 @@ pub async fn delete_media(
         return Err(AppError::Forbidden);
     }
 
-    let abs_path = PathBuf::from(&state.config().media_storage_path).join(&media.file_path);
+    let abs_path = safe_media_path(&state.config().media_storage_path, &media.file_path)
+        .await
+        .ok_or(AppError::NotFound)?;
     Media::delete(state.db(), media_id).await?;
 
     // Remove from disk (best-effort — don't fail the request if file is missing)
@@ -184,7 +188,7 @@ pub async fn download_all_zip(
     let reunion = load_reunion(&state, reunion_id).await?;
     let items = Media::list_for_reunion(state.db(), reunion_id).await?;
 
-    let storage_root = PathBuf::from(&state.config().media_storage_path);
+    let storage_root_str = state.config().media_storage_path.clone();
     let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
 
     let buf = {
@@ -192,7 +196,10 @@ pub async fn download_all_zip(
         let mut zip = ZipWriter::new(Cursor::new(&mut inner));
 
         for item in &items {
-            let abs_path = storage_root.join(&item.file_path);
+            let Some(abs_path) = safe_media_path(&storage_root_str, &item.file_path).await else {
+                tracing::warn!("skipping media {} — path outside storage root", item.id);
+                continue;
+            };
             match fs::read(&abs_path).await {
                 Ok(bytes) => {
                     if zip.start_file(&item.original_filename, options).is_ok() {
@@ -227,6 +234,26 @@ pub async fn download_all_zip(
     }
 
     Ok((StatusCode::OK, headers, buf))
+}
+
+// ── S-14: Path canonicalization helper ───────────────────────────────────────
+// Resolves `file_path` relative to `storage_root`, then verifies the result
+// stays within the root directory to prevent path traversal attacks.
+// Returns None if the path escapes the root or canonicalization fails.
+async fn safe_media_path(storage_root: &str, file_path: &str) -> Option<PathBuf> {
+    let root = fs::canonicalize(PathBuf::from(storage_root)).await.ok()?;
+    let candidate = root.join(file_path);
+    // canonicalize requires the path to exist
+    let canonical = fs::canonicalize(&candidate).await.ok()?;
+    if canonical.starts_with(&root) {
+        Some(canonical)
+    } else {
+        tracing::warn!(
+            "path traversal attempt: {} escaped storage root",
+            file_path
+        );
+        None
+    }
 }
 
 #[cfg(test)]

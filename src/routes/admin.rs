@@ -11,6 +11,7 @@ use crate::{
     auth::session::RequireSysadmin,
     error::{AppError, AppResult},
     models::{
+        app_settings::AppSettings,
         host_rotation::{HostRotation, NewHostRotation},
         reunion::Reunion,
         user::{FamilyUnit, User, UserRole},
@@ -186,6 +187,22 @@ pub async fn force_set_phase(
 ) -> AppResult<impl IntoResponse> {
     let updated = Reunion::force_set_phase(state.db(), reunion_id, &body.phase).await?;
     Ok(Json(updated))
+}
+
+// ── PATCH /admin/registration ─────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+pub struct UpdateRegistrationRequest {
+    pub enabled: bool,
+}
+
+pub async fn update_registration(
+    _admin: RequireSysadmin,
+    State(state): State<AppState>,
+    Json(body): Json<UpdateRegistrationRequest>,
+) -> AppResult<impl IntoResponse> {
+    AppSettings::set_registration_enabled(state.db(), body.enabled).await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 // ── GET /admin/config ─────────────────────────────────────────────────────────

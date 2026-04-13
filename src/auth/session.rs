@@ -14,6 +14,8 @@ use crate::{
 
 /// The key used to store the authenticated user's ID in the session.
 pub const SESSION_USER_ID: &str = "user_id";
+/// The key used to store the per-session CSRF token.
+pub const CSRF_SESSION_KEY: &str = "csrf_token";
 
 /// Store a user's ID into the session (called after successful login).
 pub async fn save_user_id(session: &Session, user_id: Uuid) -> AppResult<()> {
@@ -21,6 +23,28 @@ pub async fn save_user_id(session: &Session, user_id: Uuid) -> AppResult<()> {
         .insert(SESSION_USER_ID, user_id)
         .await
         .map_err(|e| AppError::Internal(anyhow::anyhow!("session insert: {e}")))
+}
+
+/// Return the existing CSRF token for this session, or generate and store a new one.
+pub async fn get_or_create_csrf_token(session: &Session) -> String {
+    if let Ok(Some(token)) = session.get::<String>(CSRF_SESSION_KEY).await {
+        return token;
+    }
+    let token = crate::auth::password::generate_token();
+    let _ = session.insert(CSRF_SESSION_KEY, &token).await;
+    token
+}
+
+/// Constant-time comparison of the submitted CSRF token against the session-stored one.
+pub async fn validate_csrf(session: &Session, submitted: &str) -> bool {
+    use subtle::ConstantTimeEq;
+    if let Ok(Some(stored)) = session.get::<String>(CSRF_SESSION_KEY).await {
+        let a = stored.as_bytes();
+        let b = submitted.as_bytes();
+        a.len() == b.len() && a.ct_eq(b).unwrap_u8() == 1
+    } else {
+        false
+    }
 }
 
 /// Remove the user ID from the session (called on logout).

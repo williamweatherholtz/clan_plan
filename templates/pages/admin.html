@@ -164,6 +164,30 @@
   {% endif %}
 </div>
 
+<!-- Settings -->
+<div class="bg-white rounded-xl border border-gray-100 shadow-sm mb-6">
+  <div class="flex items-center justify-between px-4 py-3 border-b border-gray-50">
+    <h2 class="font-semibold text-gray-900">Settings</h2>
+  </div>
+  <div class="px-4 py-4 space-y-4">
+    <div class="flex items-center justify-between gap-4">
+      <div>
+        <p class="text-sm font-medium text-gray-900">Allow account registration</p>
+        <p class="text-xs text-gray-500 mt-0.5">When off, the /register page is closed and the API rejects new sign-ups.</p>
+      </div>
+      <button id="reg-toggle"
+              onclick="toggleRegistration()"
+              class="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:ring-offset-1
+                     {% if registration_enabled %}bg-amber-500{% else %}bg-gray-300{% endif %}"
+              role="switch" aria-checked="{{ registration_enabled }}"
+              title="{% if registration_enabled %}Disable registration{% else %}Enable registration{% endif %}">
+        <span class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200
+                     {% if registration_enabled %}translate-x-5{% else %}translate-x-0{% endif %}"></span>
+      </button>
+    </div>
+  </div>
+</div>
+
 <!-- Create reunion modal -->
 <div id="create-reunion-modal" class="hidden fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
   <div class="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
@@ -225,6 +249,23 @@ document.getElementById('create-reunion-form').addEventListener('submit', async 
     window.location.reload();
   } catch (err) { showToast(err.message, 'error'); }
 });
+
+async function toggleRegistration() {
+  const btn = document.getElementById('reg-toggle');
+  const current = btn.getAttribute('aria-checked') === 'true';
+  const next = !current;
+  try {
+    await apiFetch('PATCH', '/admin/registration', { enabled: next });
+    btn.setAttribute('aria-checked', String(next));
+    btn.classList.toggle('bg-amber-500', next);
+    btn.classList.toggle('bg-gray-300', !next);
+    btn.querySelector('span').classList.toggle('translate-x-5', next);
+    btn.querySelector('span').classList.toggle('translate-x-0', !next);
+    showToast(`Registration ${next ? 'enabled' : 'disabled'}`, 'success');
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+}
 
 async function assignFamilyUnit(userId, familyUnitId) {
   try {

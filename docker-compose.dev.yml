@@ -1,0 +1,20 @@
+# Development overrides — run with:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+#
+# Adds mailpit (fake SMTP + web UI) and exposes the DB port for local tooling.
+
+services:
+  app:
+    environment:
+      APP_ENV: development
+
+  db:
+    ports:
+      - "127.0.0.1:5432:5432"
+
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "127.0.0.1:8025:8025"
+      - "127.0.0.1:1025:1025"
+    restart: unless-stopped

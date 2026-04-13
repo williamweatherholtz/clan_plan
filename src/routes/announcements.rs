@@ -45,6 +45,12 @@ pub async fn create_announcement(
     if body.title.trim().is_empty() {
         return Err(AppError::BadRequest("title cannot be empty".into()));
     }
+    if body.title.len() > 200 {
+        return Err(AppError::BadRequest("title cannot exceed 200 characters".into()));
+    }
+    if body.content.len() > 10_000 {
+        return Err(AppError::BadRequest("content cannot exceed 10,000 characters".into()));
+    }
 
     let ann = Announcement::create(state.db(), reunion_id, user.id, body).await?;
 

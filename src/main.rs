@@ -1,7 +1,8 @@
-use axum::{extract::DefaultBodyLimit, Router};
+use axum::{extract::DefaultBodyLimit, http::HeaderValue, Router};
 use std::net::SocketAddr;
 use time::Duration;
 use tokio::net::TcpListener;
+use tower_http::set_header::SetResponseHeaderLayer;
 use tower_sessions::{cookie::SameSite, Expiry, SessionManagerLayer};
 use tower_sessions_sqlx_store::PostgresStore;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -27,6 +28,15 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let config = Config::from_env()?;
+
+    // ── S-02: Refuse to start in production with default credentials ──────────
+    if config.is_production && config.admin_using_defaults {
+        anyhow::bail!(
+            "ADMIN_EMAIL and ADMIN_PASSWORD must be set when APP_ENV=production. \
+             Refusing to start with default credentials."
+        );
+    }
+
     let db = db::create_pool(&config.database_url).await?;
 
     // Run schema migrations
@@ -38,9 +48,11 @@ async fn main() -> anyhow::Result<()> {
     session_store.migrate().await?;
     tracing::info!("session store ready");
 
+    // ── S-08: Reduced session lifetime; S-01: Secure flag for HTTPS ──────────
     let session_layer = SessionManagerLayer::new(session_store)
-        .with_expiry(Expiry::OnInactivity(Duration::days(7)))
-        .with_same_site(SameSite::Lax);
+        .with_expiry(Expiry::OnInactivity(Duration::hours(8)))
+        .with_same_site(SameSite::Lax) // Lax required for Google OAuth cross-site redirect
+        .with_secure(config.is_production); // Secure flag enforced in production
 
     // Email transport
     let mailer = Mailer::new(&config)?;
@@ -81,9 +93,7 @@ async fn main() -> anyhow::Result<()> {
                  ╔══════════════════════════════════════════════╗\n\
                  ║       DEFAULT ADMIN CREDENTIALS IN USE       ║\n\
                  ║   Change the password after first login!     ║\n\
-                 ╠══════════════════════════════════════════════╣\n\
-                 ║  Email:    admin@localhost                    ║\n\
-                 ║  Password: password                          ║\n\
+                 ║   Set ADMIN_EMAIL + ADMIN_PASSWORD in .env   ║\n\
                  ╚══════════════════════════════════════════════╝"
             );
         } else {
@@ -99,6 +109,37 @@ async fn main() -> anyhow::Result<()> {
         .merge(admin_router())
         .nest("/reunions", reunions_router());
 
+    // ── S-05: Security headers ────────────────────────────────────────────────
+    // SetResponseHeaderLayer::if_not_present lets individual handlers override
+    // any header if needed (e.g. asset routes that set their own cache-control).
+    let security_headers = tower::ServiceBuilder::new()
+        .layer(SetResponseHeaderLayer::if_not_present(
+            axum::http::header::HeaderName::from_static("x-content-type-options"),
+            HeaderValue::from_static("nosniff"),
+        ))
+        .layer(SetResponseHeaderLayer::if_not_present(
+            axum::http::header::HeaderName::from_static("x-frame-options"),
+            HeaderValue::from_static("DENY"),
+        ))
+        .layer(SetResponseHeaderLayer::if_not_present(
+            axum::http::header::HeaderName::from_static("referrer-policy"),
+            HeaderValue::from_static("strict-origin-when-cross-origin"),
+        ))
+        .layer(SetResponseHeaderLayer::if_not_present(
+            axum::http::header::HeaderName::from_static("permissions-policy"),
+            HeaderValue::from_static("geolocation=(), microphone=(), camera=()"),
+        ))
+        // HSTS: only send when the app knows it's behind TLS (production mode).
+        // Adding HSTS on plain HTTP permanently breaks the site for visitors.
+        .layer(SetResponseHeaderLayer::if_not_present(
+            axum::http::header::STRICT_TRANSPORT_SECURITY,
+            if config.is_production {
+                HeaderValue::from_static("max-age=63072000; includeSubDomains")
+            } else {
+                HeaderValue::from_static("max-age=0")
+            },
+        ));
+
     // Raise the body limit so multipart file uploads work.
     // Axum's hard default is 2 MB; our app-level check in media.rs is the real enforcer.
     let body_limit = DefaultBodyLimit::max(config.max_upload_bytes as usize);
@@ -106,6 +147,7 @@ async fn main() -> anyhow::Result<()> {
     let app = Router::new()
         .nest("/api", api)
         .merge(pages_router())
+        .layer(security_headers)
         .layer(body_limit)
         .layer(session_layer)
         .with_state(state);

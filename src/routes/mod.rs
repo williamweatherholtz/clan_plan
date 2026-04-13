@@ -50,6 +50,7 @@ pub fn admin_router() -> Router<AppState> {
         .route("/admin/host-rotation/:id",             delete(admin::delete_host_rotation_entry))
         .route("/admin/storage",                       get(admin::storage_stats))
         .route("/admin/config",                        get(admin::get_config))
+        .route("/admin/registration",                  patch(admin::update_registration))
         .route("/admin/reunions/:id/set-phase",        post(admin::force_set_phase))
 }
 

@@ -4,6 +4,16 @@
 {% block heading %}Join the family 🎉{% endblock %}
 
 {% block content %}
+{% if !registration_enabled %}
+<div class="text-center py-4">
+  <p class="text-gray-700 font-semibold mb-1">Registration is currently closed.</p>
+  <p class="text-sm text-gray-500">Contact your administrator to get access.</p>
+</div>
+<p class="mt-6 text-center text-sm text-gray-500 font-medium">
+  Already have an account?
+  <a href="/login" class="font-bold text-indigo-600 hover:text-indigo-500 transition-colors">Sign in</a>
+</p>
+{% else %}
 <form action="/register" method="post" class="space-y-5">
   <div>
     <label for="display_name" class="block text-sm font-bold text-gray-600 mb-1.5">Your name</label>
@@ -52,4 +62,5 @@
   Already have an account?
   <a href="/login" class="font-bold text-indigo-600 hover:text-indigo-500 transition-colors">Sign in</a>
 </p>
+{% endif %}
 {% endblock %}

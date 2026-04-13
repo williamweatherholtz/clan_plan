@@ -23,8 +23,8 @@ services:
       POSTGRES_DB: clanplan
       POSTGRES_USER: clanplan
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-clanplan}
-    ports:
-      - "5432:5432"
+    # No port mapping in production — app container reaches db by service name.
+    # For local tooling access, use docker-compose.dev.yml override.
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -34,14 +34,7 @@ services:
       retries: 10
     restart: unless-stopped
 
-  # Dev-only mail catcher — remove or comment out for production.
-  # Web UI at http://localhost:8025
-  mailpit:
-    image: axllent/mailpit:latest
-    ports:
-      - "8025:8025"   # web UI
-      - "1025:1025"   # SMTP
-    restart: unless-stopped
+  # Mailpit (dev-only) has been moved to docker-compose.dev.yml
 
 volumes:
   postgres_data:

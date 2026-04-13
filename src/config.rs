@@ -30,6 +30,9 @@ pub struct Config {
     pub admin_password: String,
     /// True when neither ADMIN_EMAIL nor ADMIN_PASSWORD was overridden.
     pub admin_using_defaults: bool,
+
+    /// True when APP_ENV=production.
+    pub is_production: bool,
 }
 
 impl Config {
@@ -75,6 +78,10 @@ impl Config {
                 .unwrap_or_else(|_| "password".into()),
             admin_using_defaults: env::var("ADMIN_EMAIL").is_err()
                 && env::var("ADMIN_PASSWORD").is_err(),
+
+            is_production: env::var("APP_ENV")
+                .unwrap_or_default()
+                .eq_ignore_ascii_case("production"),
         })
     }
 

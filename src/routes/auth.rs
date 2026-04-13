@@ -1,6 +1,6 @@
 use axum::{
     extract::{Query, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::{IntoResponse, Redirect},
     Json,
 };
@@ -17,7 +17,11 @@ use crate::{
         session::{self, CurrentUser},
     },
     error::{AppError, AppResult},
-    models::user::{EmailVerification, NewUser, PasswordReset, User},
+    models::{
+        app_settings::AppSettings,
+        login_attempt::{LoginAttempt, MAX_FAILURES},
+        user::{EmailVerification, NewUser, PasswordReset, User},
+    },
     state::AppState,
 };
 
@@ -44,11 +48,13 @@ pub async fn update_me(
     }
 
     if let Some(avatar_url) = &body.avatar_url {
-        let url = if avatar_url.trim().is_empty() {
-            None
-        } else {
-            Some(avatar_url.as_str())
-        };
+        let trimmed = avatar_url.trim();
+        if !trimmed.is_empty() && !is_allowed_avatar_url(trimmed) {
+            return Err(AppError::BadRequest(
+                "avatar URL must be from an allowed host (Google or GitHub profile images)".into(),
+            ));
+        }
+        let url = if trimmed.is_empty() { None } else { Some(trimmed) };
         User::set_avatar(state.db(), user.id, url).await?;
     }
 
@@ -104,6 +110,13 @@ pub async fn register(
     State(state): State<AppState>,
     Json(body): Json<RegisterRequest>,
 ) -> AppResult<impl IntoResponse> {
+    let settings = AppSettings::get(state.db()).await?;
+    if !settings.registration_enabled {
+        return Err(AppError::BadRequest(
+            "account registration is currently disabled".into(),
+        ));
+    }
+
     password::validate_password(&body.password)
         .map_err(|e| AppError::BadRequest(e.into()))?;
 
@@ -154,10 +167,19 @@ pub async fn register(
 pub async fn login(
     State(state): State<AppState>,
     session: Session,
+    headers: HeaderMap,
     Json(body): Json<LoginRequest>,
 ) -> AppResult<impl IntoResponse> {
     // Use a generic error message to prevent email enumeration
     let auth_err = || AppError::Unauthorized;
+
+    // S-03/04: Check for too many recent failures before doing any DB work
+    let recent = LoginAttempt::recent_count(state.db(), &body.email).await.unwrap_or(0);
+    if recent >= MAX_FAILURES {
+        return Err(AppError::BadRequest(
+            "too many failed attempts — please wait 15 minutes and try again".into(),
+        ));
+    }
 
     let user = User::find_by_email(state.db(), &body.email)
         .await?
@@ -173,6 +195,9 @@ pub async fn login(
     })?;
 
     if !password::verify_password(&body.password, hash).await {
+        // Record failure for rate limiting; best-effort — don't fail the request
+        let ip = extract_ip(&headers);
+        let _ = LoginAttempt::record(state.db(), &body.email, &ip).await;
         return Err(auth_err());
     }
 
@@ -181,14 +206,25 @@ pub async fn login(
     Ok(Json(user))
 }
 
+/// Extract the real client IP, preferring X-Real-IP (set by reverse proxy).
+fn extract_ip(headers: &HeaderMap) -> String {
+    headers
+        .get("x-real-ip")
+        .or_else(|| headers.get("x-forwarded-for"))
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.split(',').next())
+        .map(|s| s.trim().to_string())
+        .unwrap_or_else(|| "unknown".to_string())
+}
+
 // ── POST /auth/logout ──────────────────────────────────────────────────────────
 
 pub async fn logout(
     _user: CurrentUser,
     session: Session,
-) -> AppResult<impl IntoResponse> {
+) -> AppResult<StatusCode> {
     session::clear(&session).await?;
-    Ok(Redirect::to("/login"))
+    Ok(StatusCode::NO_CONTENT)
 }
 
 // ── GET /auth/verify-email?token=… ────────────────────────────────────────────
@@ -312,11 +348,16 @@ pub async fn google_callback(
         .await
         .map_err(|e| AppError::Internal(anyhow::anyhow!("session: {e}")))?;
 
-    // Verify CSRF state
+    // S-15: Constant-time CSRF state comparison to prevent timing side-channels
     let stored_csrf =
         stored_csrf.ok_or_else(|| AppError::BadRequest("OAuth state missing or expired".into()))?;
-    if stored_csrf != params.state {
-        return Err(AppError::BadRequest("OAuth state mismatch".into()));
+    {
+        use subtle::ConstantTimeEq;
+        let a = stored_csrf.as_bytes();
+        let b = params.state.as_bytes();
+        if a.len() != b.len() || a.ct_eq(b).unwrap_u8() == 0 {
+            return Err(AppError::BadRequest("OAuth state mismatch".into()));
+        }
     }
 
     let pkce_verifier = PkceCodeVerifier::new(
@@ -388,6 +429,16 @@ async fn find_or_create_google_user(
     // Google-created accounts are pre-verified
     User::mark_email_verified(pool, user.id).await?;
     User::find_by_id(pool, user.id).await
+}
+
+// ── Avatar URL allowlist ───────────────────────────────────────────────────────
+
+fn is_allowed_avatar_url(url: &str) -> bool {
+    const ALLOWED_PREFIXES: &[&str] = &[
+        "https://lh3.googleusercontent.com/",
+        "https://avatars.githubusercontent.com/",
+    ];
+    ALLOWED_PREFIXES.iter().any(|prefix| url.starts_with(prefix))
 }
 
 // ── GET /me ────────────────────────────────────────────────────────────────────

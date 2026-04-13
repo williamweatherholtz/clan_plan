@@ -21,12 +21,13 @@ use uuid::Uuid;
 use crate::{
     auth::{
         password as pwd,
-        session::{save_user_id, SESSION_USER_ID},
+        session::{get_or_create_csrf_token, save_user_id, validate_csrf, SESSION_USER_ID},
     },
     error::AppError,
     models::{
         activity::{ActivityIdea, ActivitySummary},
         announcement::Announcement,
+        app_settings::AppSettings,
         availability::Availability,
         expense::Expense,
         feedback::{SurveyQuestion, SurveyResponse},
@@ -383,6 +384,7 @@ struct LoginPage {
 struct RegisterPage {
     flash: Option<FlashMsg>,
     google_enabled: bool,
+    registration_enabled: bool,
 }
 
 #[derive(Template)]
@@ -430,6 +432,7 @@ struct ProfilePage {
     email: String,
     display_name: String,
     avatar_url: String,
+    csrf_token: String,
 }
 
 #[derive(Template)]
@@ -622,6 +625,7 @@ struct AdminPage {
     family_units: Vec<FamilyUnit>,
     storage: StorageStatsView,
     reunions: Vec<ReunionAdminView>,
+    registration_enabled: bool,
 }
 
 // ============================================================================
@@ -700,9 +704,14 @@ pub async fn login_form(
 
 pub async fn register_page(session: Session, State(state): State<AppState>) -> impl IntoResponse {
     let flash = take_flash(&session).await;
+    let registration_enabled = AppSettings::get(state.db())
+        .await
+        .map(|s| s.registration_enabled)
+        .unwrap_or(false);
     RegisterPage {
         flash,
         google_enabled: state.config().google_oauth_enabled(),
+        registration_enabled,
     }
     .into_response()
 }
@@ -723,12 +732,25 @@ pub async fn register_form(
 ) -> impl IntoResponse {
     use crate::models::user::{EmailVerification, NewUser};
 
+    let registration_enabled = AppSettings::get(state.db())
+        .await
+        .map(|s| s.registration_enabled)
+        .unwrap_or(false);
+    if !registration_enabled {
+        set_flash(&session, "error", "Account registration is currently disabled.").await;
+        return Redirect::to("/register").into_response();
+    }
+
     if form.password.len() < 8 {
         set_flash(&session, "error", "Password must be at least 8 characters").await;
         return Redirect::to("/register").into_response();
     }
     if form.display_name.trim().is_empty() {
         set_flash(&session, "error", "Display name cannot be empty").await;
+        return Redirect::to("/register").into_response();
+    }
+    if form.display_name.len() > 100 {
+        set_flash(&session, "error", "Display name cannot exceed 100 characters").await;
         return Redirect::to("/register").into_response();
     }
 
@@ -999,6 +1021,7 @@ pub async fn profile_page(
 ) -> Result<Response, Response> {
     let user = require_login(&session, &state).await?;
     let flash = take_flash(&session).await;
+    let csrf_token = get_or_create_csrf_token(&session).await;
     Ok(ProfilePage {
         user_name: user.display_name.clone(),
         is_sysadmin: user.is_sysadmin(),
@@ -1006,6 +1029,7 @@ pub async fn profile_page(
         email: user.email.clone(),
         display_name: user.display_name.clone(),
         avatar_url: user.avatar_url.clone().unwrap_or_default(),
+        csrf_token,
     }
     .into_response())
 }
@@ -1016,7 +1040,13 @@ pub async fn profile_page(
 pub struct ProfileForm {
     display_name: String,
     avatar_url: String,
+    csrf_token: String,
 }
+
+const ALLOWED_AVATAR_PREFIXES: &[&str] = &[
+    "https://lh3.googleusercontent.com/",
+    "https://avatars.githubusercontent.com/",
+];
 
 pub async fn profile_form(
     session: Session,
@@ -1024,11 +1054,26 @@ pub async fn profile_form(
     Form(form): Form<ProfileForm>,
 ) -> Result<Response, Response> {
     let user = require_login(&session, &state).await?;
+
+    if !validate_csrf(&session, &form.csrf_token).await {
+        set_flash(&session, "error", "Invalid request. Please try again.").await;
+        return Ok(Redirect::to("/profile").into_response());
+    }
+
     if !form.display_name.trim().is_empty() {
         let _ = User::update_display_name(state.db(), user.id, form.display_name.trim()).await;
     }
-    let avatar = if form.avatar_url.trim().is_empty() { None } else { Some(form.avatar_url.trim()) };
+
+    let avatar_trimmed = form.avatar_url.trim();
+    if !avatar_trimmed.is_empty()
+        && !ALLOWED_AVATAR_PREFIXES.iter().any(|p| avatar_trimmed.starts_with(p))
+    {
+        set_flash(&session, "error", "Avatar URL must be a Google or GitHub profile image URL.").await;
+        return Ok(Redirect::to("/profile").into_response());
+    }
+    let avatar = if avatar_trimmed.is_empty() { None } else { Some(avatar_trimmed) };
     let _ = User::set_avatar(state.db(), user.id, avatar).await;
+
     set_flash(&session, "success", "Profile updated.").await;
     Ok(Redirect::to("/profile").into_response())
 }
@@ -1039,6 +1084,7 @@ pub async fn profile_form(
 pub struct ChangePasswordForm {
     current_password: String,
     new_password: String,
+    csrf_token: String,
 }
 
 pub async fn change_password_form(
@@ -1047,6 +1093,11 @@ pub async fn change_password_form(
     Form(form): Form<ChangePasswordForm>,
 ) -> Result<Response, Response> {
     let user = require_login(&session, &state).await?;
+
+    if !validate_csrf(&session, &form.csrf_token).await {
+        set_flash(&session, "error", "Invalid request. Please try again.").await;
+        return Ok(Redirect::to("/profile").into_response());
+    }
 
     let do_change = async {
         if form.new_password.len() < 8 {
@@ -1817,6 +1868,11 @@ pub async fn admin_page(
         })
         .collect();
 
+    let registration_enabled = AppSettings::get(state.db())
+        .await
+        .map(|s| s.registration_enabled)
+        .unwrap_or(false);
+
     Ok(AdminPage {
         user_name: admin.display_name.clone(),
         is_sysadmin: true,
@@ -1825,6 +1881,7 @@ pub async fn admin_page(
         family_units,
         storage,
         reunions,
+        registration_enabled,
     }
     .into_response())
 }
