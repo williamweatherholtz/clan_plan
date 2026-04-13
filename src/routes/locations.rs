@@ -12,6 +12,7 @@ use crate::{
     error::{AppError, AppResult},
     models::location::{
         CandidateSummary, LocationCandidate, LocationVote, LocationVoteView, NewLocationCandidate,
+        PatchLocationCandidate,
     },
     phase::Phase,
     state::AppState,
@@ -99,6 +100,30 @@ pub async fn create_location(
     let candidate =
         LocationCandidate::create(state.db(), reunion_id, user.id, body).await?;
     Ok((StatusCode::CREATED, Json(candidate)))
+}
+
+// ── PATCH /reunions/:id/locations/:loc_id ─────────────────────────────────────
+
+pub async fn update_location(
+    user: CurrentUser,
+    State(state): State<AppState>,
+    Path((reunion_id, loc_id)): Path<(Uuid, Uuid)>,
+    Json(body): Json<PatchLocationCandidate>,
+) -> AppResult<impl IntoResponse> {
+    load_reunion(&state, reunion_id).await?;
+    ensure_ra(&user, &state, reunion_id).await?;
+
+    if body.title.trim().is_empty() {
+        return Err(AppError::BadRequest("title is required".into()));
+    }
+
+    let candidate = LocationCandidate::find_by_id(state.db(), loc_id).await?;
+    if candidate.reunion_id != reunion_id {
+        return Err(AppError::NotFound);
+    }
+
+    let updated = LocationCandidate::update(state.db(), loc_id, body).await?;
+    Ok(Json(updated))
 }
 
 // ── DELETE /reunions/:id/locations/:loc_id ────────────────────────────────────

@@ -1,5 +1,6 @@
 pub mod activity;
 pub mod app_settings;
+pub mod invite;
 pub mod login_attempt;
 pub mod availability;
 pub mod expense;

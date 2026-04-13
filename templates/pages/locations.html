@@ -124,7 +124,19 @@
     {% endif %}
 
     {% if is_ra %}
-    <div class="mt-3 flex gap-2 {% if can_vote %}border-t border-gray-50 pt-3{% endif %}">
+    <div class="mt-3 flex gap-2 flex-wrap {% if can_vote %}border-t border-gray-50 pt-3{% endif %}">
+      <button
+        data-loc-id="{{ loc.candidate.id }}"
+        data-loc-title="{{ loc.candidate.title }}"
+        data-loc-desc="{% if let Some(d) = loc.candidate.description %}{{ d }}{% endif %}"
+        data-loc-url="{% if let Some(u) = loc.candidate.external_url %}{{ u }}{% endif %}"
+        data-loc-cap="{% if let Some(c) = loc.candidate.capacity %}{{ c }}{% endif %}"
+        data-loc-cost-cents="{% if let Some(c) = loc.candidate.estimated_cost_cents %}{{ c }}{% endif %}"
+        data-loc-tz="{{ loc.candidate.timezone }}"
+        onclick="openEditLoc(this)"
+        class="px-3 py-1 text-xs font-medium text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50">
+        Edit
+      </button>
       {% if !loc.selected %}
       <button onclick="apiFetch('POST','/reunions/{{ reunion.id }}/locations/{{ loc.candidate.id }}/select').then(()=>location.reload()).catch(e=>showToast(e.message,'error'))"
               class="px-3 py-1 text-xs font-medium bg-green-500 text-white rounded-lg hover:bg-green-600">
@@ -252,6 +264,141 @@ document.getElementById('add-loc-form').addEventListener('submit', async (e) => 
       external_url: document.getElementById('loc-url').value || null,
       capacity: document.getElementById('loc-cap').value ? parseInt(document.getElementById('loc-cap').value) : null,
       estimated_cost_cents: cost ? Math.round(parseFloat(cost) * 100) : null,
+      timezone: tz,
+    });
+    window.location.reload();
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+});
+</script>
+
+<!-- Edit location modal -->
+<div id="edit-loc-modal" class="hidden fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+  <div class="bg-white rounded-xl shadow-xl w-full max-w-md p-6 max-h-[90vh] overflow-y-auto">
+    <h2 class="text-lg font-semibold text-gray-900 mb-4">Edit Location</h2>
+    <form id="edit-loc-form" class="space-y-4">
+      <input type="hidden" id="edit-loc-id">
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Name *</label>
+        <input id="edit-loc-title" type="text" required class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Description</label>
+        <textarea id="edit-loc-desc" rows="2" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"></textarea>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Website URL</label>
+        <input id="edit-loc-url" type="url" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Timezone *</label>
+        <select id="edit-loc-tz" required class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
+          <option value="">— select timezone —</option>
+          <optgroup label="United States">
+            <option value="America/New_York">Eastern (ET) — New York, Atlanta</option>
+            <option value="America/Chicago">Central (CT) — Chicago, Dallas</option>
+            <option value="America/Denver">Mountain (MT) — Denver, Salt Lake City</option>
+            <option value="America/Phoenix">Mountain no-DST — Phoenix, AZ</option>
+            <option value="America/Los_Angeles">Pacific (PT) — Los Angeles, Seattle</option>
+            <option value="America/Anchorage">Alaska (AKT)</option>
+            <option value="Pacific/Honolulu">Hawaii (HT)</option>
+            <option value="America/Puerto_Rico">Puerto Rico / US Virgin Islands (AST)</option>
+          </optgroup>
+          <optgroup label="Canada">
+            <option value="America/Halifax">Atlantic (AT) — Halifax</option>
+            <option value="America/Toronto">Eastern — Toronto</option>
+            <option value="America/Winnipeg">Central — Winnipeg</option>
+            <option value="America/Edmonton">Mountain — Calgary, Edmonton</option>
+            <option value="America/Vancouver">Pacific — Vancouver</option>
+          </optgroup>
+          <optgroup label="Europe">
+            <option value="Europe/London">London (GMT/BST)</option>
+            <option value="Europe/Dublin">Dublin (IST)</option>
+            <option value="Europe/Paris">Paris / Berlin / Amsterdam (CET)</option>
+            <option value="Europe/Rome">Rome / Madrid / Warsaw (CET)</option>
+            <option value="Europe/Athens">Athens / Helsinki / Kyiv (EET)</option>
+            <option value="Europe/Moscow">Moscow (MSK)</option>
+          </optgroup>
+          <optgroup label="Latin America">
+            <option value="America/Mexico_City">Mexico City (CST)</option>
+            <option value="America/Bogota">Bogotá / Lima (COT)</option>
+            <option value="America/Santiago">Santiago (CLT)</option>
+            <option value="America/Sao_Paulo">São Paulo (BRT)</option>
+            <option value="America/Argentina/Buenos_Aires">Buenos Aires (ART)</option>
+          </optgroup>
+          <optgroup label="Africa / Middle East">
+            <option value="Africa/Cairo">Cairo (EET)</option>
+            <option value="Africa/Nairobi">Nairobi (EAT)</option>
+            <option value="Asia/Dubai">Dubai / Abu Dhabi (GST)</option>
+          </optgroup>
+          <optgroup label="Asia">
+            <option value="Asia/Kolkata">India (IST)</option>
+            <option value="Asia/Dhaka">Dhaka (BST)</option>
+            <option value="Asia/Bangkok">Bangkok / Jakarta (ICT)</option>
+            <option value="Asia/Singapore">Singapore / Kuala Lumpur (SGT)</option>
+            <option value="Asia/Shanghai">Beijing / Shanghai (CST)</option>
+            <option value="Asia/Tokyo">Tokyo (JST)</option>
+            <option value="Asia/Seoul">Seoul (KST)</option>
+          </optgroup>
+          <optgroup label="Oceania">
+            <option value="Australia/Perth">Perth (AWST)</option>
+            <option value="Australia/Adelaide">Adelaide (ACST)</option>
+            <option value="Australia/Sydney">Sydney / Melbourne (AEDT)</option>
+            <option value="Pacific/Auckland">Auckland (NZST)</option>
+            <option value="Pacific/Fiji">Fiji (FJT)</option>
+          </optgroup>
+          <optgroup label="Other">
+            <option value="UTC">UTC</option>
+          </optgroup>
+        </select>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Capacity</label>
+          <input id="edit-loc-cap" type="number" min="1" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Est. cost ($)</label>
+          <input id="edit-loc-cost" type="number" min="0" step="0.01" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
+        </div>
+      </div>
+      <div class="flex justify-end space-x-3 pt-2">
+        <button type="button" onclick="document.getElementById('edit-loc-modal').classList.add('hidden')"
+                class="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">Cancel</button>
+        <button type="submit" class="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold rounded-lg">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+<script>
+function openEditLoc(btn) {
+  const d = btn.dataset;
+  document.getElementById('edit-loc-id').value       = d.locId;
+  document.getElementById('edit-loc-title').value    = d.locTitle;
+  document.getElementById('edit-loc-desc').value     = d.locDesc  || '';
+  document.getElementById('edit-loc-url').value      = d.locUrl   || '';
+  document.getElementById('edit-loc-cap').value      = d.locCap   || '';
+  const cents = d.locCostCents;
+  document.getElementById('edit-loc-cost').value     = cents ? parseInt(cents) / 100 : '';
+  document.getElementById('edit-loc-tz').value       = d.locTz;
+  document.getElementById('edit-loc-modal').classList.remove('hidden');
+}
+
+document.getElementById('edit-loc-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const id   = document.getElementById('edit-loc-id').value;
+  const tz   = document.getElementById('edit-loc-tz').value;
+  if (!tz) { showToast('Please select a timezone', 'error'); return; }
+  const cost = document.getElementById('edit-loc-cost').value;
+  const cap  = document.getElementById('edit-loc-cap').value;
+  try {
+    await apiFetch('PATCH', `/reunions/{{ reunion.id }}/locations/${id}`, {
+      title:                document.getElementById('edit-loc-title').value,
+      description:          document.getElementById('edit-loc-desc').value  || null,
+      external_url:         document.getElementById('edit-loc-url').value   || null,
+      capacity:             cap  ? parseInt(cap)                    : null,
+      estimated_cost_cents: cost ? Math.round(parseFloat(cost)*100) : null,
       timezone: tz,
     });
     window.location.reload();

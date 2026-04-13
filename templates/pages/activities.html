@@ -45,6 +45,7 @@
       <button id="f-voted"     onclick="toggleF('hideVoted')"     class="fchip">I voted</button>
       <button id="f-commented" onclick="toggleF('hideCommented')" class="fchip">I commented</button>
       <button id="f-rsvpd"     onclick="toggleF('hideRsvpd')"     class="fchip">I'm in</button>
+      <button id="f-scheduled" onclick="toggleF('hideScheduled')" class="fchip">Scheduled</button>
       <button id="f-cancelled" onclick="toggleF('hideCancelled')" class="fchip">Cancelled</button>
     </div>
 
@@ -425,19 +426,21 @@
 <script>
 // ── Persistent filter / sort ──────────────────────────────────────────────────
 
-const FK = 'act-filters-v1';
+const FK = 'act-filters-v2';
 const CHIP_KEYS = {
   'f-group':     'hideGroup',
   'f-meal':      'hideMeal',
   'f-voted':     'hideVoted',
   'f-commented': 'hideCommented',
   'f-rsvpd':     'hideRsvpd',
+  'f-scheduled': 'hideScheduled',
   'f-cancelled': 'hideCancelled',
 };
+const FK_DEFAULTS = { hideCancelled: true, hideScheduled: true };
 
 function getF() {
-  try { return JSON.parse(localStorage.getItem(FK) || 'null') || { hideCancelled: true }; }
-  catch { return { hideCancelled: true }; }
+  try { return JSON.parse(localStorage.getItem(FK) || 'null') || { ...FK_DEFAULTS }; }
+  catch { return { ...FK_DEFAULTS }; }
 }
 function saveF(s) { localStorage.setItem(FK, JSON.stringify(s)); }
 
@@ -457,7 +460,7 @@ function saveAndApply() {
 }
 
 function resetF() {
-  saveF({ hideCancelled: true });
+  saveF({ ...FK_DEFAULTS });
   applyF();
   syncUI();
 }
@@ -494,6 +497,7 @@ function applyF() {
       (s.hideVoted     && c.dataset.myVoted   === 'true')      ||
       (s.hideCommented && c.dataset.myComment === 'true')      ||
       (s.hideRsvpd     && c.dataset.myRsvp    === 'true')      ||
+      (s.hideScheduled && c.dataset.status    === 'scheduled') ||
       (s.hideCancelled && c.dataset.status    === 'cancelled');
     c.style.display = hide ? 'none' : '';
     if (!hide) shown++;

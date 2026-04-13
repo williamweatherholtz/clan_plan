@@ -16,6 +16,9 @@ use crate::{
 pub const SESSION_USER_ID: &str = "user_id";
 /// The key used to store the per-session CSRF token.
 pub const CSRF_SESSION_KEY: &str = "csrf_token";
+/// Invite token stored for unauthenticated users who visit a /join/:token link.
+/// Consumed (and the invite redeemed) immediately after the next successful login or registration.
+pub const PENDING_INVITE_KEY: &str = "pending_invite";
 
 /// Store a user's ID into the session (called after successful login).
 pub async fn save_user_id(session: &Session, user_id: Uuid) -> AppResult<()> {

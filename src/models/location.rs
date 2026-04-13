@@ -71,6 +71,17 @@ pub struct NewLocationCandidate {
     pub timezone: String,
 }
 
+/// Fields for editing an existing location candidate. All are full-replacement.
+#[derive(Debug, Deserialize)]
+pub struct PatchLocationCandidate {
+    pub title: String,
+    pub description: Option<String>,
+    pub external_url: Option<String>,
+    pub capacity: Option<i32>,
+    pub estimated_cost_cents: Option<i32>,
+    pub timezone: String,
+}
+
 impl LocationCandidate {
     pub async fn create(
         pool: &PgPool,
@@ -115,6 +126,34 @@ impl LocationCandidate {
         )
         .bind(reunion_id)
         .fetch_all(pool)
+        .await?)
+    }
+
+    pub async fn update(
+        pool: &PgPool,
+        id: Uuid,
+        patch: PatchLocationCandidate,
+    ) -> AppResult<LocationCandidate> {
+        Ok(sqlx::query_as::<_, LocationCandidate>(
+            r#"UPDATE location_candidates
+               SET title                = $1,
+                   description          = $2,
+                   external_url         = $3,
+                   capacity             = $4,
+                   estimated_cost_cents = $5,
+                   timezone             = $6,
+                   updated_at           = NOW()
+               WHERE id = $7
+               RETURNING *"#,
+        )
+        .bind(&patch.title)
+        .bind(&patch.description)
+        .bind(&patch.external_url)
+        .bind(patch.capacity)
+        .bind(patch.estimated_cost_cents)
+        .bind(&patch.timezone)
+        .bind(id)
+        .fetch_one(pool)
         .await?)
     }
 

@@ -5,6 +5,7 @@ pub mod availability;
 pub mod expenses;
 pub mod feedback;
 pub mod helpers;
+pub mod invites;
 pub mod locations;
 pub mod media;
 pub mod pages;
@@ -78,7 +79,8 @@ pub fn reunions_router() -> Router<AppState> {
         .route("/:id/locations",           get(locations::list_locations)
                                               .post(locations::create_location))
         .route("/:id/locations/reveal",    post(locations::reveal_votes))
-        .route("/:id/locations/:loc_id",   delete(locations::delete_location))
+        .route("/:id/locations/:loc_id",   patch(locations::update_location)
+                                              .delete(locations::delete_location))
         .route("/:id/locations/:loc_id/vote",   put(locations::vote_location))
         .route("/:id/locations/:loc_id/select", post(locations::select_location))
         // ── Schedule blocks + slots ───────────────────────────────────────────
@@ -113,6 +115,10 @@ pub fn reunions_router() -> Router<AppState> {
                                            delete(activities::delete_comment))
         .route("/:id/activities/:act_id/status",  patch(activities::set_status))
         .route("/:id/activities/:act_id/promote", post(activities::promote_activity))
+        // ── Invite links ─────────────────────────────────────────────────────
+        .route("/:id/invites",                  post(invites::create_invite))
+        .route("/:id/invites/:invite_id",       delete(invites::revoke_invite))
+        .route("/:id/invite-members/:user_id",  delete(invites::remove_invite_member))
         // ── Media ─────────────────────────────────────────────────────────────
         .route("/:id/media",               get(media::list_media).post(media::upload_media))
         .route("/:id/media/download-all",  get(media::download_all_zip))
