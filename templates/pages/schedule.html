@@ -45,8 +45,32 @@
             <p class="text-xs text-gray-400 mt-1">📍 {{ loc }}</p>
             {% endif %}
           </div>
-          <div class="ml-4 text-sm text-gray-500 whitespace-nowrap flex-shrink-0">
-            {{ b.block.start_time.format("%I:%M %p") }} – {{ b.block.end_time.format("%I:%M %p") }}
+          <div class="ml-4 flex flex-col items-end gap-2 flex-shrink-0">
+            <span class="text-sm text-gray-500 whitespace-nowrap">
+              {{ b.block.start_time.format("%I:%M %p") }} – {{ b.block.end_time.format("%I:%M %p") }}
+            </span>
+            {% if is_ra %}
+            <div class="flex gap-1.5">
+              <button
+                data-block-id="{{ b.block.id }}"
+                data-block-title="{{ b.block.title }}"
+                data-block-date="{{ b.block.block_date }}"
+                data-block-start="{{ b.block.start_time.format("%H:%M") }}"
+                data-block-end="{{ b.block.end_time.format("%H:%M") }}"
+                data-block-type="{{ b.block.block_type.label() }}"
+                data-block-desc="{% if let Some(d) = b.block.description %}{{ d }}{% endif %}"
+                data-block-loc="{% if let Some(l) = b.block.location_note %}{{ l }}{% endif %}"
+                onclick="openEditBlock(this)"
+                class="px-2 py-0.5 text-xs text-indigo-600 border border-indigo-200 rounded hover:bg-indigo-50">
+                Edit
+              </button>
+              <button
+                onclick="if(confirm('Remove this block from the schedule?'))deleteBlock('{{ reunion.id }}','{{ b.block.id }}')"
+                class="px-2 py-0.5 text-xs text-red-500 border border-red-200 rounded hover:bg-red-50">
+                Remove
+              </button>
+            </div>
+            {% endif %}
           </div>
         </div>
 
@@ -95,5 +119,108 @@
   </div>
   {% endfor %}
 </div>
+{% endif %}
+
+{% if is_ra %}
+<!-- ── Edit block modal ────────────────────────────────────────────────────────── -->
+<div id="edit-block-modal" class="hidden fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+  <div class="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+    <h2 class="text-lg font-semibold text-gray-900 mb-4">Edit Schedule Block</h2>
+    <form id="edit-block-form" class="space-y-4">
+      <input type="hidden" id="edit-block-id">
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Title *</label>
+        <input id="edit-block-title" type="text" required
+               class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Date *</label>
+          <input id="edit-block-date" type="date" required
+                 {% if let Some(rd) = reunion_date %}
+                 min="{{ rd.start_date }}" max="{{ rd.end_date }}"
+                 {% endif %}
+                 class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Type *</label>
+          <select id="edit-block-type"
+                  class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
+            <option value="optional">Optional</option>
+            <option value="group">Group</option>
+            <option value="meal">Meal</option>
+          </select>
+        </div>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Start time *</label>
+          <input id="edit-block-start" type="time" required
+                 class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">End time *</label>
+          <input id="edit-block-end" type="time" required
+                 class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
+        </div>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Description</label>
+        <textarea id="edit-block-desc" rows="2"
+                  class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"></textarea>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Location note</label>
+        <input id="edit-block-loc" type="text" placeholder="e.g. Trail head parking lot"
+               class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
+      </div>
+      <div class="flex justify-end space-x-3 pt-2">
+        <button type="button" onclick="document.getElementById('edit-block-modal').classList.add('hidden')"
+                class="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">Cancel</button>
+        <button type="submit" class="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold rounded-lg">Save changes</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+function openEditBlock(btn) {
+  document.getElementById('edit-block-id').value    = btn.dataset.blockId;
+  document.getElementById('edit-block-title').value = btn.dataset.blockTitle;
+  document.getElementById('edit-block-date').value  = btn.dataset.blockDate;
+  document.getElementById('edit-block-start').value = btn.dataset.blockStart;
+  document.getElementById('edit-block-end').value   = btn.dataset.blockEnd;
+  document.getElementById('edit-block-type').value  = btn.dataset.blockType;
+  document.getElementById('edit-block-desc').value  = btn.dataset.blockDesc || '';
+  document.getElementById('edit-block-loc').value   = btn.dataset.blockLoc || '';
+  document.getElementById('edit-block-modal').classList.remove('hidden');
+}
+
+document.getElementById('edit-block-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const blockId = document.getElementById('edit-block-id').value;
+  const startTime = document.getElementById('edit-block-start').value;
+  const endTime   = document.getElementById('edit-block-end').value;
+  try {
+    await apiFetch('PATCH', `/reunions/{{ reunion.id }}/schedule/${blockId}`, {
+      title:         document.getElementById('edit-block-title').value,
+      block_date:    document.getElementById('edit-block-date').value,
+      block_type:    document.getElementById('edit-block-type').value,
+      start_time:    startTime + ':00',
+      end_time:      endTime   + ':00',
+      description:   document.getElementById('edit-block-desc').value || null,
+      location_note: document.getElementById('edit-block-loc').value  || null,
+    });
+    window.location.reload();
+  } catch (err) { showToast(err.message, 'error'); }
+});
+
+async function deleteBlock(reunionId, blockId) {
+  try {
+    await apiFetch('DELETE', `/reunions/${reunionId}/schedule/${blockId}`);
+    window.location.reload();
+  } catch (err) { showToast(err.message, 'error'); }
+}
+</script>
 {% endif %}
 {% endblock %}

@@ -535,7 +535,9 @@ struct SchedulePage {
     is_sysadmin: bool,
     flash: Option<FlashMsg>,
     reunion: Reunion,
+    reunion_date: Option<ReunionDate>,
     days: Vec<ScheduleDay>,
+    is_ra: bool,
     tabs: Vec<NavTab>,
     tab_label: &'static str,
 }
@@ -1434,6 +1436,8 @@ pub async fn schedule_page(
     let user = require_login(&session, &state).await?;
     let reunion = helpers::load_reunion_for_member(&state, &user, reunion_id).await?;
     let flash = take_flash(&session).await;
+    let is_ra = helpers::user_is_ra(&state, &user, reunion_id).await;
+    let reunion_date = ReunionDate::find_for_reunion(state.db(), reunion_id).await.ok().flatten();
     let blocks = ScheduleBlock::list_for_reunion(state.db(), reunion_id)
         .await
         .unwrap_or_default();
@@ -1479,7 +1483,9 @@ pub async fn schedule_page(
         tabs: reunion_tabs(reunion_id, "schedule"),
         tab_label: "Schedule",
         reunion,
+        reunion_date,
         days,
+        is_ra,
     }
     .into_response())
 }

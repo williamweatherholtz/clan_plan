@@ -157,6 +157,16 @@ pub async fn delete_block(
     }
 
     ScheduleBlock::delete(state.db(), block_id).await?;
+
+    // Reset any activity that was promoted to this block
+    sqlx::query(
+        "UPDATE activity_ideas SET status = 'proposed', promoted_to_block_id = NULL, updated_at = NOW() \
+         WHERE promoted_to_block_id = $1",
+    )
+    .bind(block_id)
+    .execute(state.db())
+    .await?;
+
     Ok(StatusCode::NO_CONTENT)
 }
 

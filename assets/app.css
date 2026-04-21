@@ -160,14 +160,6 @@ input[type="range"] { accent-color: var(--primary); }
   border-radius: 0.625rem;
 }
 
-/* ── Star rating ─────────────────────────────────────────────────────────── */
-.star-rating { display: inline-flex; flex-direction: row-reverse; gap: 2px; }
-.star-rating input[type="radio"] { display: none; }
-.star-rating label { cursor: pointer; font-size: 1.5rem; color: #E5E7EB; }
-.star-rating input[type="radio"]:checked ~ label,
-.star-rating label:hover,
-.star-rating label:hover ~ label { color: var(--amber); }
-
 /* ── Page load animation ─────────────────────────────────────────────────── */
 @keyframes fade-up {
   from { opacity: 0; transform: translateY(10px); }
