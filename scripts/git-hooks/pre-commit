@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# ── Clan Plan pre-commit guard ────────────────────────────────────────────────
+# Blocks edits to any migrations/*.sql file that already exists in HEAD.
+# Brand-new migrations (added in this commit) are allowed.
+#
+# Why: sqlx hashes each migration's bytes when it first runs. Editing a
+# committed migration breaks every database that has already applied it.
+#
+# Bypass intentionally NOT supported. If you genuinely need to bypass this,
+# you also need to manually patch _sqlx_migrations in every running DB —
+# don't `--no-verify`, just don't.
+
+set -euo pipefail
+
+# Files staged in this commit, restricted to migrations/*.sql, with status.
+# Status codes: A=added, M=modified, D=deleted, R=renamed, C=copied
+changed=$(git diff --cached --name-status -- 'migrations/*.sql' || true)
+
+if [ -z "$changed" ]; then
+  exit 0
+fi
+
+violations=()
+while IFS=$'\t' read -r status path rest; do
+  case "$status" in
+    A)
+      # New migration — allowed.
+      ;;
+    M|R*|C*|D)
+      violations+=("$status  $path")
+      ;;
+  esac
+done <<< "$changed"
+
+if [ "${#violations[@]}" -gt 0 ]; then
+  echo "" >&2
+  echo "❌ Pre-commit blocked: migrations are immutable once committed." >&2
+  echo "" >&2
+  echo "Offending changes:" >&2
+  for v in "${violations[@]}"; do
+    echo "    $v" >&2
+  done
+  echo "" >&2
+  echo "Migrations are an append-only ledger. To make a change," >&2
+  echo "create a new file with the next sequence number, e.g.:" >&2
+  next=$(ls migrations/ 2>/dev/null | grep -E '^[0-9]+_' | sort -n | tail -1 | sed -E 's/^([0-9]+).*/\1/')
+  if [ -n "${next:-}" ]; then
+    nextnum=$(printf '%03d' "$((10#$next + 1))")
+    echo "    migrations/${nextnum}_your_change.sql" >&2
+  fi
+  echo "" >&2
+  echo "Do not use --no-verify; doing so will break every database" >&2
+  echo "that has already applied the modified migration." >&2
+  echo "" >&2
+  exit 1
+fi
+
+exit 0

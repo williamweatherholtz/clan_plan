@@ -50,16 +50,6 @@ pub struct ActivityIdea {
 }
 
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
-pub struct ActivityVote {
-    pub id: Uuid,
-    pub activity_idea_id: Uuid,
-    pub user_id: Uuid,
-    pub interest_score: i16,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-}
-
-#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 pub struct ActivityComment {
     pub id: Uuid,
     pub activity_idea_id: Uuid,
@@ -80,12 +70,10 @@ pub struct ActivityCommentView {
     pub display_name: String,
 }
 
-/// Aggregate interest summary for displaying in list views.
+/// Aggregate counts for displaying in list views.
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 pub struct ActivitySummary {
     pub idea_id: Uuid,
-    pub avg_interest: Option<f64>,
-    pub vote_count: i64,
     pub comment_count: i64,
 }
 
@@ -246,16 +234,13 @@ impl ActivityIdea {
         .ok_or(AppError::NotFound)
     }
 
-    /// Aggregated interest score + comment count for a single idea.
+    /// Comment count for a single idea.
     pub async fn for_idea(pool: &PgPool, idea_id: Uuid) -> AppResult<ActivitySummary> {
         Ok(sqlx::query_as::<_, ActivitySummary>(
             r#"SELECT
                 ai.id AS idea_id,
-                AVG(av.interest_score::float) AS avg_interest,
-                COUNT(DISTINCT av.id)          AS vote_count,
-                COUNT(DISTINCT ac.id)          AS comment_count
+                COUNT(DISTINCT ac.id) AS comment_count
                FROM activity_ideas ai
-               LEFT JOIN activity_votes    av ON av.activity_idea_id = ai.id
                LEFT JOIN activity_comments ac ON ac.activity_idea_id = ai.id
                WHERE ai.id = $1
                GROUP BY ai.id"#,
@@ -265,74 +250,21 @@ impl ActivityIdea {
         .await?)
     }
 
-    /// Family-unit-weighted interest score + comment count for an entire reunion.
-    /// Each family unit counts as one vote regardless of member count.
+    /// Comment counts for every activity idea in a reunion.
     pub async fn summaries_for_reunion(
         pool: &PgPool,
         reunion_id: Uuid,
     ) -> AppResult<Vec<ActivitySummary>> {
         Ok(sqlx::query_as::<_, ActivitySummary>(
-            r#"WITH per_family AS (
-                 SELECT av.activity_idea_id AS idea_id,
-                        COALESCE(u.family_unit_id::text, u.id::text) AS group_key,
-                        AVG(av.interest_score::float) AS family_avg
-                 FROM activity_votes av
-                 JOIN users u ON u.id = av.user_id
-                 JOIN activity_ideas ai2 ON ai2.id = av.activity_idea_id
-                 WHERE ai2.reunion_id = $1
-                 GROUP BY av.activity_idea_id, group_key
-               )
-               SELECT ai.id                           AS idea_id,
-                      AVG(pf.family_avg)              AS avg_interest,
-                      COUNT(DISTINCT pf.group_key)    AS vote_count,
-                      COUNT(DISTINCT ac.id)           AS comment_count
+            r#"SELECT ai.id                  AS idea_id,
+                      COUNT(DISTINCT ac.id)  AS comment_count
                FROM activity_ideas ai
-               LEFT JOIN per_family pf ON pf.idea_id = ai.id
                LEFT JOIN activity_comments ac ON ac.activity_idea_id = ai.id
                WHERE ai.reunion_id = $1
-               GROUP BY ai.id
-               ORDER BY avg_interest DESC NULLS LAST"#,
+               GROUP BY ai.id"#,
         )
         .bind(reunion_id)
         .fetch_all(pool)
-        .await?)
-    }
-}
-
-// ── ActivityVote queries ───────────────────────────────────────────────────────
-
-impl ActivityVote {
-    pub async fn upsert(
-        pool: &PgPool,
-        idea_id: Uuid,
-        user_id: Uuid,
-        interest_score: i16,
-    ) -> AppResult<ActivityVote> {
-        Ok(sqlx::query_as::<_, ActivityVote>(
-            r#"INSERT INTO activity_votes (activity_idea_id, user_id, interest_score)
-               VALUES ($1, $2, $3)
-               ON CONFLICT (activity_idea_id, user_id) DO UPDATE
-               SET interest_score = EXCLUDED.interest_score, updated_at = NOW()
-               RETURNING *"#,
-        )
-        .bind(idea_id)
-        .bind(user_id)
-        .bind(interest_score)
-        .fetch_one(pool)
-        .await?)
-    }
-
-    pub async fn by_user(
-        pool: &PgPool,
-        idea_id: Uuid,
-        user_id: Uuid,
-    ) -> AppResult<Option<ActivityVote>> {
-        Ok(sqlx::query_as::<_, ActivityVote>(
-            "SELECT * FROM activity_votes WHERE activity_idea_id = $1 AND user_id = $2",
-        )
-        .bind(idea_id)
-        .bind(user_id)
-        .fetch_optional(pool)
         .await?)
     }
 }
@@ -388,6 +320,28 @@ impl ActivityComment {
         .await?)
     }
 
+    /// Update content of one's own comment. Only the author may edit; admins
+    /// can delete but not silently rewrite.
+    pub async fn update(
+        pool: &PgPool,
+        comment_id: Uuid,
+        requesting_user_id: Uuid,
+        new_content: &str,
+    ) -> AppResult<ActivityComment> {
+        let row = sqlx::query_as::<_, ActivityComment>(
+            r#"UPDATE activity_comments
+               SET content = $1, updated_at = NOW()
+               WHERE id = $2 AND user_id = $3
+               RETURNING *"#,
+        )
+        .bind(new_content)
+        .bind(comment_id)
+        .bind(requesting_user_id)
+        .fetch_optional(pool)
+        .await?;
+        row.ok_or(AppError::Forbidden)
+    }
+
     pub async fn delete(pool: &PgPool, comment_id: Uuid, requesting_user_id: Uuid, is_admin: bool) -> AppResult<()> {
         let query = if is_admin {
             "DELETE FROM activity_comments WHERE id = $1"
@@ -419,10 +373,4 @@ mod tests {
         assert_ne!(ActivityStatus::Pinned, ActivityStatus::Cancelled);
     }
 
-    #[test]
-    fn interest_score_range() {
-        for valid in 1i16..=5 {
-            assert!((1..=5).contains(&valid));
-        }
-    }
 }

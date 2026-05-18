@@ -1,25 +1,19 @@
 // ── Theme management ─────────────────────────────────────────────────────────
-// Cycles: system → light → dark → system
-// <html class="dark"> is the hook; CSS in app.css does the rest.
-
-const THEME_ICONS = { light: '☀️', dark: '🌙', system: '💻' };
-const THEME_TITLES = { light: 'Light mode', dark: 'Dark mode', system: 'System theme' };
+// One cycle button: click to advance light → system → dark → light.
+// <html class="dark"> drives the dark-mode CSS; <html data-theme-pref="...">
+// drives which icon shows on the cycle button.
 
 function applyTheme(theme) {
   const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
   const useDark = theme === 'dark' || (theme === 'system' && prefersDark);
   document.documentElement.classList.toggle('dark', useDark);
+  document.documentElement.setAttribute('data-theme-pref', theme);
   localStorage.setItem('theme', theme);
-  const btn = document.getElementById('theme-toggle');
-  if (btn) {
-    btn.textContent = THEME_ICONS[theme] || '💻';
-    btn.title = THEME_TITLES[theme] || 'Toggle theme';
-  }
 }
 
 function cycleTheme() {
   const current = localStorage.getItem('theme') || 'system';
-  applyTheme({ system: 'light', light: 'dark', dark: 'system' }[current] || 'light');
+  applyTheme({ light: 'system', system: 'dark', dark: 'light' }[current] || 'light');
 }
 
 function initTheme() {
@@ -30,6 +24,8 @@ function initTheme() {
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
   if ((localStorage.getItem('theme') || 'system') === 'system') applyTheme('system');
 });
+
+document.addEventListener('DOMContentLoaded', initTheme);
 
 // ── API helper ────────────────────────────────────────────────────────────────
 const API = '/api';
@@ -192,16 +188,6 @@ async function advancePhase(reunionId) {
   }
 }
 
-// ── Activity vote ─────────────────────────────────────────────────────────────
-async function voteActivity(reunionId, actId, score) {
-  try {
-    await apiFetch('PUT', `/reunions/${reunionId}/activities/${actId}/vote`, { interest_score: score });
-    window.location.reload();
-  } catch (e) {
-    showToast(e.message, 'error');
-  }
-}
-
 // ── Today-view SSE ────────────────────────────────────────────────────────────
 let _lastTodayBlocks = null;
 let _lastHidePast = false;
@@ -312,10 +298,10 @@ function renderTodaySnapshot(blocks, container, startDate = null, hidePast = fal
     const today = now.toISOString().slice(0, 10);
     let msg = 'No events scheduled for today.';
     if (startDate && today < startDate) {
-      msg = 'Reunion hasn\'t started yet — the schedule will appear here on the first day.';
+      msg = "Reunion hasn't started yet — the schedule will appear here on the first day.";
     }
     container.innerHTML =
-      `<p class="text-sm text-center py-6" style="color:var(--muted)">${msg}</p>`;
+      `<p class="text-sm text-center py-8 font-display italic" style="color:var(--ink-3)">${msg}</p>`;
     return;
   }
 
@@ -328,40 +314,43 @@ function renderTodaySnapshot(blocks, container, startDate = null, hidePast = fal
     });
     if (!visibleBlocks.length) {
       container.innerHTML =
-        `<p class="text-sm text-center py-6" style="color:var(--muted)">All done for today! 🎉</p>`;
+        `<p class="text-sm text-center py-8 font-display italic" style="color:var(--ink-3)">All done for today.</p>`;
       return;
     }
   }
 
-  const colors = { group:'bg-blue-50 border-blue-300', optional:'bg-green-50 border-green-300',
-                   meal:'bg-amber-50 border-amber-300', travel:'bg-purple-50 border-purple-300' };
+  // Find the next upcoming block (first that hasn't started yet)
+  const nextBlockIdx = visibleBlocks.findIndex(b => {
+    const [sh, sm] = b.start_time.split(':').map(Number);
+    return (sh * 60 + sm) > nowMins;
+  });
 
-  container.innerHTML = visibleBlocks.map(b => {
+  container.innerHTML = visibleBlocks.map((b, idx) => {
     const [sh, sm] = b.start_time.split(':').map(Number);
     const [eh, em] = b.end_time.split(':').map(Number);
     const startMins = sh * 60 + sm;
     const endMins   = eh * 60 + em;
     const isCurrent = nowMins >= startMins && nowMins < endMins;
-    const borderCls = colors[b.block_type] || 'bg-gray-50 border-gray-300';
-    const ring = isCurrent ? ' ring-2 ring-amber-500' : '';
+    const isNext    = idx === nextBlockIdx && !isCurrent;
+    const kind      = b.block_type || 'group';
 
     const slots = (b.slots || []).map(sl => {
-      const names = (sl.signups || []).map(s => `<span class="bg-gray-100 px-1 rounded text-xs">${s.user_id}</span>`).join(' ');
-      return `<div class="text-sm mt-1"><span class="font-medium">${sl.role_name}</span> ${names}</div>`;
+      const names = (sl.signups || []).map(s => `<span class="mono" style="background:var(--bg-2);padding:1px 5px;color:var(--ink-2)">${s.user_id}</span>`).join(' ');
+      return `<div class="text-xs mt-1.5" style="color:var(--ink-3)"><span class="smallcaps" style="font-size:9px">${sl.role_name}</span> ${names}</div>`;
     }).join('');
 
-    return `<div class="p-4 rounded border ${borderCls}${ring} mb-3">
-      <div class="flex justify-between items-start">
-        <div>
-          <h3 class="font-semibold text-gray-900">${b.title}</h3>
-          ${b.description ? `<p class="text-sm text-gray-600 mt-0.5">${b.description}</p>` : ''}
-          ${slots}
-        </div>
-        <div class="text-sm text-gray-500 whitespace-nowrap ml-4">
-          ${fmtTime(b.start_time)} – ${fmtTime(b.end_time)}
-          ${isCurrent ? '<span class="ml-1 text-amber-600 font-semibold">● Now</span>' : ''}
-        </div>
+    const stateCls = isCurrent ? ' block-now' : (isNext ? ' block-next' : '');
+    const topRule = idx ? 'border-top:1px solid var(--rule-soft);' : '';
+
+    return `<div class="grid items-center schedule-block${stateCls}" style="grid-template-columns: 100px 1fr auto; gap:18px; padding:18px 22px;${topRule}">
+      <div class="block-time">${fmtTime(b.start_time)}</div>
+      <div>
+        <div class="block-name">${b.title}</div>
+        ${b.description ? `<div class="block-where">${b.description}</div>` : ''}
+        ${slots}
+        ${isCurrent ? '<div class="smallcaps mt-2" style="color:var(--burgundy);font-size:10px">— Happening now</div>' : ''}
       </div>
+      <span class="block-kind ${kind}">${kind}</span>
     </div>`;
   }).join('');
 }

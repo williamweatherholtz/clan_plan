@@ -172,8 +172,12 @@ pub struct NavTab {
 /// `active_path` should match the tab's `path` field (e.g. `"activities"`).
 fn reunion_tabs(_reunion_id: Uuid, active_path: &str) -> Vec<NavTab> {
     // (path, label, group)
+    // group 0 = always-visible top-level tabs
+    // group 1 = "Setup" dropdown (planning / prep)
+    // group 2 = "Reunion" dropdown (during / after)
     let defs: &[(&str, &str, u8)] = &[
         ("",              "Overview",      0),
+        ("activities",    "Activities",    0),
         ("settings",      "Settings",      0),
         // Planning / prep
         ("availability",  "Availability",  1),
@@ -182,7 +186,6 @@ fn reunion_tabs(_reunion_id: Uuid, active_path: &str) -> Vec<NavTab> {
         ("survey",        "Survey",        1),
         // During / always-on
         ("today",         "Today",         2),
-        ("activities",    "Activities",    2),
         ("schedule",      "Schedule",      2),
         ("media",         "Photos",        2),
     ];
@@ -294,20 +297,23 @@ pub struct LocationPageView {
 
 pub struct ActivityPageView {
     pub idea: ActivityIdea,
-    pub avg_interest_str: String,
-    pub vote_count: i64,
     pub comment_count: i64,
-    pub my_vote: Option<i16>,
+    /// "I'm in" RSVP — used for non-meal activities.
     pub rsvp_count: i64,
     pub my_rsvp: bool,
-    /// Comma-separated display names of all members who marked "I'm in".
     pub rsvp_names_str: String,
+    /// "I'll make" — meal activities only.
+    pub make_count: i64,
+    pub my_make: bool,
+    pub make_names_str: String,
+    /// "I'll cleanup" — meal activities only.
+    pub cleanup_count: i64,
+    pub my_cleanup: bool,
+    pub cleanup_names_str: String,
     pub proposed_by_name: String,
     pub proposed_by_family: Option<String>,
     /// True when the logged-in user originally proposed this idea.
     pub is_own_idea: bool,
-    /// True when the logged-in user has posted at least one comment on this idea.
-    pub my_comment: bool,
 }
 
 // ── Expense view type ─────────────────────────────────────────────────────────
@@ -460,6 +466,20 @@ struct ReunionOverviewPage {
     ra_names: String,
     /// Display name of the selected location candidate, if one has been chosen.
     selected_location_name: Option<String>,
+    /// Top 3 activity ideas (pinned first, then by interest score).
+    top_activities: Vec<TopActivityPreview>,
+    /// Total non-cancelled activity ideas (used for the "View all" link count).
+    activity_total: i64,
+}
+
+pub struct TopActivityPreview {
+    pub id: Uuid,
+    pub title: String,
+    pub category: String,
+    pub status: String,
+    pub comment_count: i64,
+    pub rsvp_count: i64,
+    pub my_rsvp: bool,
 }
 
 pub struct FamilyUnitWithEnrolled {
@@ -1258,6 +1278,60 @@ pub async fn reunion_overview(
         None
     };
 
+    // Top 3 activity ideas for the overview preview block.
+    // Pinned first, then by RSVP count, then newest.
+    let top_activity_rows = sqlx::query_as::<
+        _,
+        (Uuid, String, String, String, i64, i64, bool),
+    >(
+        r#"
+        SELECT ai.id,
+               ai.title,
+               ai.category,
+               ai.status::text,
+               COUNT(DISTINCT ac.id)                                                    AS comment_count,
+               COUNT(DISTINCT ar.user_id) FILTER (WHERE ar.role = 'in')                 AS rsvp_count,
+               COALESCE(BOOL_OR(ar.user_id = $2 AND ar.role = 'in'), FALSE)             AS my_rsvp
+        FROM activity_ideas ai
+        LEFT JOIN activity_comments ac ON ac.activity_idea_id = ai.id
+        LEFT JOIN activity_rsvps    ar ON ar.activity_idea_id = ai.id
+        WHERE ai.reunion_id = $1 AND ai.status != 'cancelled'
+        GROUP BY ai.id
+        ORDER BY (ai.status = 'pinned') DESC,
+                 COUNT(DISTINCT ar.user_id) DESC,
+                 ai.created_at DESC
+        LIMIT 3
+        "#,
+    )
+    .bind(reunion_id)
+    .bind(user.id)
+    .fetch_all(state.db())
+    .await
+    .unwrap_or_default();
+
+    let top_activities: Vec<TopActivityPreview> = top_activity_rows
+        .into_iter()
+        .map(|(id, title, category, status, comments, rsvps, mine)| {
+            TopActivityPreview {
+                id,
+                title,
+                category,
+                status,
+                comment_count: comments,
+                rsvp_count: rsvps,
+                my_rsvp: mine,
+            }
+        })
+        .collect();
+
+    let activity_total = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM activity_ideas WHERE reunion_id = $1 AND status != 'cancelled'",
+    )
+    .bind(reunion_id)
+    .fetch_one(state.db())
+    .await
+    .unwrap_or(0);
+
     Ok(ReunionOverviewPage {
         user_name: user.display_name.clone(),
         is_sysadmin: user.is_sysadmin(),
@@ -1273,6 +1347,8 @@ pub async fn reunion_overview(
         base_url,
         ra_names,
         selected_location_name,
+        top_activities,
+        activity_total,
     }
     .into_response())
 }
@@ -1519,8 +1595,6 @@ pub async fn activities_page(
     State(state): State<AppState>,
     SlugOrId(reunion_id): SlugOrId,
 ) -> Result<Response, Response> {
-    use crate::models::activity::ActivityVote;
-
     let user = require_login(&session, &state).await?;
     let reunion = helpers::load_reunion_for_member(&state, &user, reunion_id).await?;
     let flash = take_flash(&session).await;
@@ -1534,45 +1608,16 @@ pub async fn activities_page(
         .await
         .unwrap_or_default();
 
-    // Single batch query: which of these ideas has the current user commented on?
-    let idea_ids: Vec<Uuid> = ideas.iter().map(|i| i.id).collect();
-    let my_commented_ids: Vec<Uuid> = if idea_ids.is_empty() {
-        vec![]
-    } else {
-        sqlx::query_scalar::<_, Uuid>(
-            "SELECT DISTINCT activity_idea_id FROM activity_comments \
-             WHERE activity_idea_id = ANY($1) AND user_id = $2",
-        )
-        .bind(&idea_ids)
-        .bind(user.id)
-        .fetch_all(state.db())
-        .await
-        .unwrap_or_default()
-    };
-    let my_commented_set: std::collections::HashSet<Uuid> =
-        my_commented_ids.into_iter().collect();
-
     let mut activities = Vec::new();
     for idea in ideas {
         let summary = ActivityIdea::for_idea(state.db(), idea.id)
             .await
             .unwrap_or(ActivitySummary {
                 idea_id: idea.id,
-                avg_interest: None,
-                vote_count: 0,
                 comment_count: 0,
             });
-        let my_vote = ActivityVote::by_user(state.db(), idea.id, user.id)
-            .await
-            .ok()
-            .flatten()
-            .map(|v| v.interest_score);
-        let avg_interest_str = summary
-            .avg_interest
-            .map(|v| format!("{:.1}", v))
-            .unwrap_or_default();
-        let rsvp_rows = sqlx::query_as::<_, (uuid::Uuid, String)>(
-            "SELECT ar.user_id, u.display_name
+        let rsvp_rows = sqlx::query_as::<_, (uuid::Uuid, String, String)>(
+            "SELECT ar.user_id, u.display_name, ar.role
              FROM activity_rsvps ar
              JOIN users u ON u.id = ar.user_id
              WHERE ar.activity_idea_id = $1
@@ -1582,9 +1627,31 @@ pub async fn activities_page(
         .fetch_all(state.db())
         .await
         .unwrap_or_default();
-        let rsvp_count = rsvp_rows.len() as i64;
-        let my_rsvp = rsvp_rows.iter().any(|(uid, _)| *uid == user.id);
-        let rsvp_names_str = rsvp_rows.iter().map(|(_, n)| n.as_str()).collect::<Vec<_>>().join(", ");
+        let names_for = |role: &str| -> Vec<&str> {
+            rsvp_rows
+                .iter()
+                .filter(|(_, _, r)| r == role)
+                .map(|(_, n, _)| n.as_str())
+                .collect()
+        };
+        let in_names = names_for("in");
+        let make_names = names_for("make");
+        let cleanup_names = names_for("cleanup");
+        let rsvp_count = in_names.len() as i64;
+        let my_rsvp = rsvp_rows
+            .iter()
+            .any(|(uid, _, r)| *uid == user.id && r == "in");
+        let rsvp_names_str = in_names.join(", ");
+        let make_count = make_names.len() as i64;
+        let my_make = rsvp_rows
+            .iter()
+            .any(|(uid, _, r)| *uid == user.id && r == "make");
+        let make_names_str = make_names.join(", ");
+        let cleanup_count = cleanup_names.len() as i64;
+        let my_cleanup = rsvp_rows
+            .iter()
+            .any(|(uid, _, r)| *uid == user.id && r == "cleanup");
+        let cleanup_names_str = cleanup_names.join(", ");
         let proposer: (String, Option<String>) = sqlx::query_as(
             "SELECT u.display_name, f.name
              FROM users u
@@ -1598,20 +1665,21 @@ pub async fn activities_page(
         .flatten()
         .unwrap_or_else(|| ("Unknown".to_string(), None));
         let is_own_idea = idea.proposed_by == user.id;
-        let my_comment = my_commented_set.contains(&idea.id);
         activities.push(ActivityPageView {
             idea,
-            avg_interest_str,
-            vote_count: summary.vote_count,
             comment_count: summary.comment_count,
-            my_vote,
             rsvp_count,
             my_rsvp,
             rsvp_names_str,
+            make_count,
+            my_make,
+            make_names_str,
+            cleanup_count,
+            my_cleanup,
+            cleanup_names_str,
             proposed_by_name: proposer.0,
             proposed_by_family: proposer.1,
             is_own_idea,
-            my_comment,
         });
     }
 

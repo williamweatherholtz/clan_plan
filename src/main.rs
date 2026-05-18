@@ -2,11 +2,62 @@ use axum::{extract::DefaultBodyLimit, http::HeaderValue, Router};
 use std::{net::SocketAddr, time::Duration as StdDuration};
 use time::Duration;
 use tokio::net::TcpListener;
+use axum::{
+    body::Body,
+    extract::Request,
+    http::{header::LOCATION, StatusCode},
+    middleware::Next,
+    response::Response,
+};
+use tower::Layer;
 use tower_http::{
     request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer},
     set_header::SetResponseHeaderLayer,
     trace::TraceLayer,
 };
+
+/// Canonicalize a URL path: collapse runs of `/`, strip a trailing `/` (except
+/// at the root). Used by `redirect_to_canonical_path`.
+fn canonicalize(path: &str) -> String {
+    let mut out = String::with_capacity(path.len());
+    let mut prev_slash = false;
+    for c in path.chars() {
+        if c == '/' {
+            if !prev_slash {
+                out.push(c);
+            }
+            prev_slash = true;
+        } else {
+            out.push(c);
+            prev_slash = false;
+        }
+    }
+    if out.len() > 1 && out.ends_with('/') {
+        out.pop();
+    }
+    out
+}
+
+/// 308 Permanent Redirect to the canonical form of the URL whenever the
+/// request path differs from `canonicalize(path)`. Handles trailing slashes
+/// and doubled slashes. 308 preserves the HTTP method (vs. 301/302 which can
+/// silently downgrade a POST to a GET).
+async fn redirect_to_canonical_path(req: Request, next: Next) -> Response {
+    let path = req.uri().path();
+    let canonical = canonicalize(path);
+    if canonical != path {
+        let location = match req.uri().query() {
+            Some(q) => format!("{}?{}", canonical, q),
+            None => canonical,
+        };
+        return Response::builder()
+            .status(StatusCode::PERMANENT_REDIRECT)
+            .header(LOCATION, location)
+            .body(Body::empty())
+            .unwrap();
+    }
+    next.run(req).await
+}
 use tower_sessions::{cookie::SameSite, Expiry, SessionManagerLayer};
 use tower_sessions_sqlx_store::PostgresStore;
 use tracing::Span;
@@ -242,8 +293,21 @@ async fn main() -> anyhow::Result<()> {
     let addr: SocketAddr = format!("0.0.0.0:{}", config.app_port).parse()?;
     tracing::info!(addr = %addr, "listening");
 
+    // URL canonicalization. This middleware must wrap the full built router so
+    // it sees the request path BEFORE route matching (Router::layer applies
+    // AFTER matching, which is too late). Issues a 308 redirect for any path
+    // that isn't already canonical — that catches trailing slashes
+    // ("/dashboard/" → "/dashboard"), doubled slashes ("/r//highlands" →
+    // "/r/highlands"), and converges browser bookmarks / CDN caches on one URL.
+    let app =
+        axum::middleware::from_fn(redirect_to_canonical_path).layer(app);
+
     let listener = TcpListener::bind(addr).await?;
-    axum::serve(listener, app).await?;
+    axum::serve(
+        listener,
+        axum::ServiceExt::<axum::extract::Request>::into_make_service(app),
+    )
+    .await?;
 
     Ok(())
 }

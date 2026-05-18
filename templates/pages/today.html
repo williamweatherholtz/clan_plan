@@ -3,26 +3,30 @@
 {% block title %}Today — {{ reunion.title }}{% endblock %}
 
 {% block reunion_content %}
-<div class="flex items-center justify-between mb-6">
+<div class="flex items-end justify-between mb-6 pb-3" style="border-bottom: 1px solid var(--rule);">
   <div>
-    <h1 class="text-2xl font-bold text-gray-900">Today's Schedule</h1>
-    <p class="text-sm text-gray-500 mt-0.5">Live view · updates every 30 seconds</p>
+    <h1 class="font-display leading-none" style="color: var(--ink); font-size: 36px; font-variation-settings: 'opsz' 144, 'SOFT' 30, 'wght' 460;">
+      Today.
+    </h1>
+    <p class="text-sm mt-1 font-display italic" style="color: var(--ink-3); font-variation-settings: 'opsz' 144, 'SOFT' 25, 'wght' 400;">
+      live · refreshes every 30 seconds.
+    </p>
   </div>
   <div class="flex items-center gap-3">
-    <span id="sse-status" class="inline-flex items-center gap-1.5 text-xs text-green-600 font-medium">
-      <span class="w-2 h-2 rounded-full bg-green-400 animate-pulse"></span> Live
+    <span id="sse-status" class="inline-flex items-center gap-1.5 text-xs font-medium" style="color: var(--moss);">
+      <span class="w-2 h-2 rounded-full animate-pulse" style="background: var(--moss);"></span> Live
     </span>
-    <label class="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer select-none">
+    <label class="flex items-center gap-1.5 text-xs cursor-pointer select-none smallcaps">
       <input type="checkbox" id="use24h" onchange="toggle24h(this.checked)">
       24h
     </label>
   </div>
 </div>
 
-<div id="today-content" class="space-y-3">
-  <div class="text-center py-8 text-gray-400">
-    <div class="animate-spin inline-block w-5 h-5 border-2 border-indigo-400 border-t-transparent rounded-full mb-2"></div>
-    <p class="text-sm">Loading today's schedule…</p>
+<div id="today-content" style="background: var(--surface); border: 1px solid var(--rule);">
+  <div class="text-center py-10" style="color: var(--ink-3);">
+    <div class="animate-spin inline-block w-5 h-5 rounded-full mb-2" style="border: 2px solid var(--moss); border-top-color: transparent;"></div>
+    <p class="text-sm font-display italic">Loading today's schedule…</p>
   </div>
 </div>
 {% endblock %}
