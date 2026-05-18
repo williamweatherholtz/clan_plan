@@ -17,7 +17,7 @@
 </div>
 
 {% if reunions.is_empty() %}
-<div class="card text-center py-16">
+<div class="card text-center px-6 py-16">
   <p class="text-xl font-bold mb-1" style="color: var(--text);">No reunions yet</p>
   {% if is_sysadmin %}
   <p class="text-base" style="color: var(--muted);">Create your first one with the button above.</p>
@@ -28,7 +28,7 @@
 {% else %}
 <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
   {% for r in reunions %}{% if r.phase_label != "Archived" %}
-  <a href="/reunions/{{ r.id }}" class="card card-interactive">
+  <a href="/reunions/{{ r.id }}" class="card card-interactive p-6">
     <span class="status
       {% if r.phase_label == "Reunion Active" %}active
       {% else if r.phase_label == "Post-Reunion" %}success
@@ -68,7 +68,7 @@
   </button>
   <div x-show="open" x-cloak class="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
     {% for r in reunions %}{% if r.phase_label == "Archived" %}
-    <a href="/reunions/{{ r.id }}" class="card card-interactive opacity-70 hover:opacity-100">
+    <a href="/reunions/{{ r.id }}" class="card card-interactive p-5 opacity-70 hover:opacity-100">
       <span class="status"><span class="dot"></span>Archived</span>
       <h2 class="text-lg font-bold mt-2" style="color: var(--text);">{{ r.title }}</h2>
       {% if let Some(desc) = r.description %}
@@ -86,7 +86,7 @@
 
 {% if is_sysadmin %}
 <div id="new-reunion-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4" style="background:rgba(15,23,42,0.5); backdrop-filter:blur(4px)">
-  <div class="card w-full max-w-md" style="border-radius: 10px;">
+  <div class="card w-full max-w-md p-7" style="border-radius: 10px;">
     <h2 class="text-xl font-bold mb-5" style="color: var(--text);">New reunion</h2>
     <form id="new-reunion-form" class="space-y-4">
       <div>

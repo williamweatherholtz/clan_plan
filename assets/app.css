@@ -75,11 +75,12 @@ a:hover { text-decoration: underline; text-underline-offset: 3px; }
 .nav-logo:hover { text-decoration: none; color: var(--text); }
 
 /* ── Cards ──────────────────────────────────────────────────────────────── */
+/* `.card` is JUST the container shape — callers add their own padding so the
+   internal padding compounds correctly with nested headers/bodies. */
 .card {
   background: var(--surface);
   border: 1px solid var(--border-2);
   border-radius: 8px;
-  padding: 24px;
 }
 .card-interactive {
   cursor: pointer;

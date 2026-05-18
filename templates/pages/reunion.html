@@ -22,7 +22,7 @@
 
 {% let has_info = reunion.description.is_some() || !ra_names.is_empty() %}
 {% if has_info %}
-<div class="mb-6 card">
+<div class="mb-6 card p-5">
   {% if let Some(desc) = reunion.description %}
   <p style="color: var(--text);">{{ desc }}</p>
   {% endif %}

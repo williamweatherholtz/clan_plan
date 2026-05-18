@@ -3,7 +3,11 @@
 // <html class="dark"> is the hook; CSS in app.css does the rest.
 
 const THEME_ICONS = { light: '☀️', dark: '🌙', system: '💻' };
-const THEME_TITLES = { light: 'Light mode', dark: 'Dark mode', system: 'System theme' };
+const THEME_TITLES = {
+  light:  'Light mode — click for Dark',
+  dark:   'Dark mode — click for Auto',
+  system: 'Auto (matches your system) — click for Light',
+};
 
 function applyTheme(theme) {
   const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
