@@ -49,7 +49,7 @@
             <span class="text-sm text-gray-500 whitespace-nowrap">
               {{ b.block.start_time.format("%I:%M %p") }} – {{ b.block.end_time.format("%I:%M %p") }}
             </span>
-            {% if is_ra %}
+            {% if b.can_modify %}
             <div class="flex gap-1.5">
               <button
                 data-block-id="{{ b.block.id }}"
@@ -121,7 +121,6 @@
 </div>
 {% endif %}
 
-{% if is_ra %}
 <!-- ── Edit block modal ────────────────────────────────────────────────────────── -->
 <div id="edit-block-modal" class="hidden fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
   <div class="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
@@ -222,5 +221,4 @@ async function deleteBlock(reunionId, blockId) {
   } catch (err) { showToast(err.message, 'error'); }
 }
 </script>
-{% endif %}
 {% endblock %}

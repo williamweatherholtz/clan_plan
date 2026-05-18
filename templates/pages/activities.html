@@ -163,6 +163,16 @@
       </form>
     </div>
 
+    <!-- Schedule action — open to all reunion members -->
+    {% if a.idea.status.label() != "scheduled" && a.idea.status.label() != "cancelled" %}
+    <div class="flex gap-2 flex-wrap border-t border-gray-50 pt-3 mt-1">
+      <button onclick="openScheduleActivity('{{ a.idea.id }}','{{ a.idea.title }}'{% if let Some(d) = a.idea.description %},'{{ d }}'{% else %},''{% endif %})"
+              class="px-2 py-1 text-xs text-green-600 border border-green-200 rounded hover:bg-green-50">
+        → Schedule
+      </button>
+    </div>
+    {% endif %}
+
     <!-- Controls row -->
     {% if is_ra || a.is_own_idea %}
     <div class="flex gap-2 flex-wrap border-t border-gray-50 pt-3 mt-1">
@@ -180,13 +190,6 @@
       </button>
 
       {% if is_ra %}
-        {% if a.idea.status.label() != "scheduled" && a.idea.status.label() != "cancelled" %}
-        <button onclick="openScheduleActivity('{{ a.idea.id }}','{{ a.idea.title }}'{% if let Some(d) = a.idea.description %},'{{ d }}'{% else %},''{% endif %})"
-                class="px-2 py-1 text-xs text-green-600 border border-green-200 rounded hover:bg-green-50">
-          → Schedule
-        </button>
-        {% endif %}
-
         <!-- Pin / Unpin -->
         {% if a.idea.status.label() != "cancelled" && a.idea.status.label() != "scheduled" %}
           {% if a.idea.status.label() == "pinned" %}

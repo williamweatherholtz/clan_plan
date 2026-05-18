@@ -21,6 +21,11 @@ COPY src ./src
 COPY migrations ./migrations
 COPY assets ./assets
 COPY templates ./templates
+COPY scripts ./scripts
+
+# Validate migrations form a contiguous 001..N sequence with no gaps.
+# Catches the "previously applied but missing" failure before we ship a broken image.
+RUN chmod +x scripts/check-migrations.sh && SKIP_GIT_CHECK=1 scripts/check-migrations.sh
 
 # sqlx compile-time query checks require either a live DATABASE_URL or the
 # pre-generated .sqlx directory. Commit .sqlx/ after running:

@@ -19,7 +19,7 @@ use crate::{
     state::AppState,
 };
 
-use super::helpers::{ensure_ra, load_reunion};
+use super::helpers::{ensure_member, ensure_ra, load_reunion, user_is_ra};
 
 // ── Response types ─────────────────────────────────────────────────────────────
 
@@ -82,8 +82,8 @@ pub async fn create_block(
     Path(reunion_id): Path<Uuid>,
     Json(body): Json<NewScheduleBlock>,
 ) -> AppResult<impl IntoResponse> {
-    load_reunion(&state, reunion_id).await?;
-    ensure_ra(&user, &state, reunion_id).await?;
+    let reunion = load_reunion(&state, reunion_id).await?;
+    ensure_member(&user, &state, &reunion).await?;
 
     if body.end_time <= body.start_time {
         return Err(AppError::BadRequest(
@@ -104,11 +104,13 @@ pub async fn update_block(
     Json(body): Json<NewScheduleBlock>,
 ) -> AppResult<impl IntoResponse> {
     load_reunion(&state, reunion_id).await?;
-    ensure_ra(&user, &state, reunion_id).await?;
 
     let block = ScheduleBlock::find_by_id(state.db(), block_id).await?;
     if block.reunion_id != reunion_id {
         return Err(AppError::NotFound);
+    }
+    if block.created_by != user.id && !user_is_ra(&state, &user, reunion_id).await {
+        return Err(AppError::Forbidden);
     }
 
     if body.end_time <= body.start_time {
@@ -149,11 +151,13 @@ pub async fn delete_block(
     Path((reunion_id, block_id)): Path<(Uuid, Uuid)>,
 ) -> AppResult<StatusCode> {
     load_reunion(&state, reunion_id).await?;
-    ensure_ra(&user, &state, reunion_id).await?;
 
     let block = ScheduleBlock::find_by_id(state.db(), block_id).await?;
     if block.reunion_id != reunion_id {
         return Err(AppError::NotFound);
+    }
+    if block.created_by != user.id && !user_is_ra(&state, &user, reunion_id).await {
+        return Err(AppError::Forbidden);
     }
 
     ScheduleBlock::delete(state.db(), block_id).await?;

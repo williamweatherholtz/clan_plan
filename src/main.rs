@@ -58,8 +58,21 @@ async fn main() -> anyhow::Result<()> {
 
     let db = db::create_pool(&config.database_url).await?;
 
-    // Run schema migrations
-    sqlx::migrate!("./migrations").run(&db).await?;
+    // Run schema migrations. If the DB has applied a migration whose file is no
+    // longer in ./migrations, sqlx returns MigrateError::VersionMissing and we
+    // refuse to start with a deploy-actionable error message.
+    if let Err(e) = sqlx::migrate!("./migrations").run(&db).await {
+        if let sqlx::migrate::MigrateError::VersionMissing(v) = &e {
+            tracing::error!(
+                version = v,
+                "database has applied migration {v} but no matching file exists in ./migrations. \
+                 the deployed image is missing a migration that was previously run against this database. \
+                 to recover, either restore the missing migration file or, if the migration's effects \
+                 are no longer relevant, run: DELETE FROM _sqlx_migrations WHERE version = {v};",
+            );
+        }
+        return Err(e.into());
+    }
     tracing::info!("database migrations applied");
 
     // Set up session store (creates the tower_sessions table if absent)

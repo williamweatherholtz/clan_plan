@@ -268,6 +268,8 @@ pub struct ScheduleSlotPageView {
 pub struct ScheduleBlockPageView {
     pub block: crate::models::schedule::ScheduleBlock,
     pub slots: Vec<ScheduleSlotPageView>,
+    /// True when the requesting user may edit/delete this block (creator or RA).
+    pub can_modify: bool,
 }
 
 pub struct ScheduleDay {
@@ -537,7 +539,6 @@ struct SchedulePage {
     reunion: Reunion,
     reunion_date: Option<ReunionDate>,
     days: Vec<ScheduleDay>,
-    is_ra: bool,
     tabs: Vec<NavTab>,
     tab_label: &'static str,
 }
@@ -1468,7 +1469,8 @@ pub async fn schedule_page(
             slot_views.push(ScheduleSlotPageView { slot, signups, is_full, user_signed_up });
         }
         let label = block.block_date.format("%A, %B %-d").to_string();
-        let block_view = ScheduleBlockPageView { block, slots: slot_views };
+        let can_modify = is_ra || block.created_by == user.id;
+        let block_view = ScheduleBlockPageView { block, slots: slot_views, can_modify };
         if let Some(day) = days.iter_mut().find(|d| d.label == label) {
             day.blocks.push(block_view);
         } else {
@@ -1485,7 +1487,6 @@ pub async fn schedule_page(
         reunion,
         reunion_date,
         days,
-        is_ra,
     }
     .into_response())
 }

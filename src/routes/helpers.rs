@@ -35,6 +35,15 @@ pub async fn ensure_ra(user: &User, state: &AppState, reunion_id: Uuid) -> AppRe
     }
 }
 
+/// Returns Forbidden if the user is not a member of this reunion (per `user_is_reunion_member`).
+pub async fn ensure_member(user: &User, state: &AppState, reunion: &Reunion) -> AppResult<()> {
+    if user_is_reunion_member(state, user, reunion).await {
+        Ok(())
+    } else {
+        Err(AppError::Forbidden)
+    }
+}
+
 /// Returns true if the user may access this reunion at member level:
 /// - Sysadmins always may.
 /// - RAs always may (any phase, including Draft).
