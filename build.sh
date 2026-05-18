@@ -43,6 +43,31 @@ done
 
 log() { printf '\n\033[1;34m▶\033[0m %s\n' "$*"; }
 
+# ── Locate cargo when running under Git Bash / MSYS ───────────────────────────
+# Windows installs cargo to %USERPROFILE%\.cargo\bin, which isn't on MSYS's
+# default PATH. Add it if cargo isn't already reachable.
+if ! command -v cargo >/dev/null 2>&1; then
+    for candidate in \
+        "${USERPROFILE:-}/.cargo/bin" \
+        "$HOME/.cargo/bin" \
+        "/c/Users/${USER:-$USERNAME}/.cargo/bin"; do
+        if [[ -n "$candidate" && (-x "$candidate/cargo" || -x "$candidate/cargo.exe") ]]; then
+            # Convert Windows path to MSYS-style if needed
+            if [[ "$candidate" == *:\\* || "$candidate" == *:/* ]]; then
+                candidate="$(cygpath -u "$candidate" 2>/dev/null || echo "$candidate")"
+            fi
+            export PATH="$candidate:$PATH"
+            echo "build.sh: added $candidate to PATH"
+            break
+        fi
+    done
+fi
+
+if ! command -v cargo >/dev/null 2>&1; then
+    echo "build.sh: cargo not found on PATH. Install rustup or add ~/.cargo/bin to PATH." >&2
+    exit 1
+fi
+
 # ── Tag derivation ────────────────────────────────────────────────────────────
 # Default: short git sha, with -dirty suffix if working tree has changes.
 # This lets you ship WIP test builds without bypassing the sanity gates below.
