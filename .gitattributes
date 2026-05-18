@@ -1,0 +1,24 @@
+# Auto-detect text vs binary; let git normalize known text formats.
+* text=auto
+
+# Files that get executed or served inside Linux containers MUST be LF.
+# CRLF in a shell script breaks `bash` ("$'\r': command not found").
+# CRLF in committed CSS/JS makes every rebuild diff against on-disk content.
+*.sh        text eol=lf
+*.css       text eol=lf
+*.js        text eol=lf
+*.html      text eol=lf
+*.sql       text eol=lf
+*.rs        text eol=lf
+*.toml      text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+Dockerfile  text eol=lf
+.gitignore  text eol=lf
+
+# Binary
+*.png       binary
+*.jpg       binary
+*.svg       text eol=lf
+*.ico       binary
+*.pdf       binary
