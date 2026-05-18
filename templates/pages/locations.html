@@ -43,6 +43,10 @@
     <div class="flex justify-between items-start">
       <div class="flex-1 min-w-0">
         <h2 class="font-semibold text-gray-900">{{ loc.candidate.title }}</h2>
+        {% if let Some(addr) = loc.candidate.address %}
+        <a href="https://www.google.com/maps/search/?api=1&query={{ addr }}" target="_blank" rel="noopener"
+           class="block text-sm mt-1 hover:underline" style="color: var(--accent);">{{ addr }} ↗</a>
+        {% endif %}
         {% if let Some(desc) = loc.candidate.description %}
         <p class="text-sm text-gray-500 mt-1">{{ desc }}</p>
         {% endif %}
@@ -130,6 +134,7 @@
         data-loc-title="{{ loc.candidate.title }}"
         data-loc-desc="{% if let Some(d) = loc.candidate.description %}{{ d }}{% endif %}"
         data-loc-url="{% if let Some(u) = loc.candidate.external_url %}{{ u }}{% endif %}"
+        data-loc-address="{% if let Some(a) = loc.candidate.address %}{{ a }}{% endif %}"
         data-loc-cap="{% if let Some(c) = loc.candidate.capacity %}{{ c }}{% endif %}"
         data-loc-cost-cents="{% if let Some(c) = loc.candidate.estimated_cost_cents %}{{ c }}{% endif %}"
         data-loc-tz="{{ loc.candidate.timezone }}"
@@ -166,6 +171,12 @@
       <div>
         <label class="block text-sm font-medium text-gray-700 mb-1">Description</label>
         <textarea id="loc-desc" rows="2" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"></textarea>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Address</label>
+        <input id="loc-address" type="text" placeholder="e.g. 16878 AR-309, Paris, AR 72855"
+               class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
+        <p class="mt-1 text-xs text-gray-400">Used by Calendar apps to offer turn-by-turn navigation.</p>
       </div>
       <div>
         <label class="block text-sm font-medium text-gray-700 mb-1">Website URL</label>
@@ -262,6 +273,7 @@ document.getElementById('add-loc-form').addEventListener('submit', async (e) => 
       title: document.getElementById('loc-title').value,
       description: document.getElementById('loc-desc').value || null,
       external_url: document.getElementById('loc-url').value || null,
+      address: document.getElementById('loc-address').value || null,
       capacity: document.getElementById('loc-cap').value ? parseInt(document.getElementById('loc-cap').value) : null,
       estimated_cost_cents: cost ? Math.round(parseFloat(cost) * 100) : null,
       timezone: tz,
@@ -286,6 +298,12 @@ document.getElementById('add-loc-form').addEventListener('submit', async (e) => 
       <div>
         <label class="block text-sm font-medium text-gray-700 mb-1">Description</label>
         <textarea id="edit-loc-desc" rows="2" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"></textarea>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Address</label>
+        <input id="edit-loc-address" type="text" placeholder="e.g. 16878 AR-309, Paris, AR 72855"
+               class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
+        <p class="mt-1 text-xs text-gray-400">Used by Calendar apps to offer turn-by-turn navigation.</p>
       </div>
       <div>
         <label class="block text-sm font-medium text-gray-700 mb-1">Website URL</label>
@@ -378,6 +396,7 @@ function openEditLoc(btn) {
   document.getElementById('edit-loc-title').value    = d.locTitle;
   document.getElementById('edit-loc-desc').value     = d.locDesc  || '';
   document.getElementById('edit-loc-url').value      = d.locUrl   || '';
+  document.getElementById('edit-loc-address').value  = d.locAddress || '';
   document.getElementById('edit-loc-cap').value      = d.locCap   || '';
   const cents = d.locCostCents;
   document.getElementById('edit-loc-cost').value     = cents ? parseInt(cents) / 100 : '';
@@ -397,6 +416,7 @@ document.getElementById('edit-loc-form').addEventListener('submit', async (e) =>
       title:                document.getElementById('edit-loc-title').value,
       description:          document.getElementById('edit-loc-desc').value  || null,
       external_url:         document.getElementById('edit-loc-url').value   || null,
+      address:              document.getElementById('edit-loc-address').value || null,
       capacity:             cap  ? parseInt(cap)                    : null,
       estimated_cost_cents: cost ? Math.round(parseFloat(cost)*100) : null,
       timezone: tz,

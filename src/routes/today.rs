@@ -16,7 +16,10 @@ use uuid::Uuid;
 use crate::{
     auth::session::CurrentUser,
     error::AppResult,
-    models::schedule::{ScheduleBlock, Signup, SignupSlot},
+    models::{
+        location::LocationCandidate,
+        schedule::{ScheduleBlock, Signup, SignupSlot},
+    },
     state::AppState,
 };
 
@@ -86,6 +89,21 @@ pub async fn get_ics(
     let tz_str = get_reunion_tz_string(&state, &reunion).await;
     let tz: Tz = tz_str.parse().unwrap_or(chrono_tz::UTC);
 
+    // Selected reunion location supplies a map-parseable address fallback.
+    // Format: "<title>, <address>" so the title is visible AND the address is
+    // detected by iOS Calendar (Apple Maps) and Google Calendar.
+    let reunion_location_str: Option<String> = if let Some(loc_id) = reunion.selected_location_id {
+        match LocationCandidate::find_by_id(state.db(), loc_id).await {
+            Ok(loc) => match (loc.address.as_deref(), loc.title.as_str()) {
+                (Some(addr), title) if !addr.is_empty() => Some(format!("{title}, {addr}")),
+                (_, title) => Some(title.to_string()),
+            },
+            Err(_) => None,
+        }
+    } else {
+        None
+    };
+
     // DTSTAMP = when this calendar was generated (required by RFC 5545 §3.6.1).
     let dtstamp = Utc::now().format("%Y%m%dT%H%M%SZ").to_string();
 
@@ -103,7 +121,20 @@ pub async fn get_ics(
         let dtend   = local_to_utc(block.block_date, block.end_time,   tz);
         let summary = escape_ics(&block.title);
         let desc = block.description.as_deref().map(escape_ics).unwrap_or_default();
-        let location = block.location_note.as_deref().map(escape_ics).unwrap_or_default();
+
+        // LOCATION assembly: prefer block.location_note when set, AND always
+        // append the reunion's selected location (with address) so map apps
+        // can hand off to navigation. If the block has no note we just use
+        // the reunion location alone.
+        let block_loc = block.location_note.as_deref().unwrap_or("").trim();
+        let reunion_loc = reunion_location_str.as_deref().unwrap_or("").trim();
+        let combined: String = match (block_loc.is_empty(), reunion_loc.is_empty()) {
+            (true,  true)  => String::new(),
+            (false, true)  => block_loc.to_string(),
+            (true,  false) => reunion_loc.to_string(),
+            (false, false) => format!("{block_loc} — {reunion_loc}"),
+        };
+        let location = if combined.is_empty() { String::new() } else { escape_ics(&combined) };
 
         ics.push_str(&format!(
             "BEGIN:VEVENT\r\n\

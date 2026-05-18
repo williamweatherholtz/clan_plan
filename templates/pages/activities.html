@@ -19,7 +19,7 @@
 {% else %}
 
 <!-- ── Filter / sort bar ─────────────────────────────────────────────────────── -->
-<div class="mb-5 p-3 bg-white rounded-xl border border-gray-100 shadow-sm">
+<div class="mb-5 p-3 bg-white rounded-xl border border-gray-100 shadow-sm relative z-20">
   <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
 
     <!-- Sort -->
@@ -47,7 +47,7 @@
         </svg>
       </button>
       <div x-show="open" @click.away="open = false" x-cloak
-           class="absolute top-full mt-1 left-0 z-30 min-w-[200px] rounded-md py-1"
+           class="absolute top-full mt-1 left-0 z-50 min-w-[200px] rounded-md py-1"
            style="background: var(--surface); border: 1px solid var(--border-2); box-shadow: 0 4px 16px rgba(15,23,42,.08);">
         <label class="flex items-center gap-2.5 px-3 py-2 text-sm cursor-pointer hover:bg-wash" style="color: var(--text);">
           <input id="f-group" type="checkbox" onchange="toggleF('hideGroup')" class="w-4 h-4 m-0" style="min-height: 0; padding: 0;">

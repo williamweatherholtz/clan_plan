@@ -19,6 +19,10 @@ pub struct LocationCandidate {
     pub image_path: Option<String>,
     /// IANA timezone identifier, e.g. "America/New_York".
     pub timezone: String,
+    /// Map-parseable street address, e.g. "123 Pine St, Mount Magazine, AR 72801".
+    /// Surfaced in the ICS export's LOCATION field so calendar apps offer
+    /// tap-to-navigate (Apple Maps / Google Maps).
+    pub address: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -69,6 +73,7 @@ pub struct NewLocationCandidate {
     pub estimated_cost_cents: Option<i32>,
     /// IANA timezone identifier, e.g. "America/New_York".
     pub timezone: String,
+    pub address: Option<String>,
 }
 
 /// Fields for editing an existing location candidate. All are full-replacement.
@@ -80,6 +85,7 @@ pub struct PatchLocationCandidate {
     pub capacity: Option<i32>,
     pub estimated_cost_cents: Option<i32>,
     pub timezone: String,
+    pub address: Option<String>,
 }
 
 impl LocationCandidate {
@@ -91,8 +97,8 @@ impl LocationCandidate {
     ) -> AppResult<LocationCandidate> {
         Ok(sqlx::query_as::<_, LocationCandidate>(
             r#"INSERT INTO location_candidates
-               (reunion_id, added_by, title, description, external_url, capacity, estimated_cost_cents, timezone)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+               (reunion_id, added_by, title, description, external_url, capacity, estimated_cost_cents, timezone, address)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
                RETURNING *"#,
         )
         .bind(reunion_id)
@@ -103,6 +109,7 @@ impl LocationCandidate {
         .bind(new.capacity)
         .bind(new.estimated_cost_cents)
         .bind(&new.timezone)
+        .bind(&new.address)
         .fetch_one(pool)
         .await?)
     }
@@ -142,8 +149,9 @@ impl LocationCandidate {
                    capacity             = $4,
                    estimated_cost_cents = $5,
                    timezone             = $6,
+                   address              = $7,
                    updated_at           = NOW()
-               WHERE id = $7
+               WHERE id = $8
                RETURNING *"#,
         )
         .bind(&patch.title)
@@ -152,6 +160,7 @@ impl LocationCandidate {
         .bind(patch.capacity)
         .bind(patch.estimated_cost_cents)
         .bind(&patch.timezone)
+        .bind(&patch.address)
         .bind(id)
         .fetch_one(pool)
         .await?)
