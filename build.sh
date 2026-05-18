@@ -45,26 +45,60 @@ log() { printf '\n\033[1;34m▶\033[0m %s\n' "$*"; }
 
 # ── Locate cargo when running under Git Bash / MSYS ───────────────────────────
 # Windows installs cargo to %USERPROFILE%\.cargo\bin, which isn't on MSYS's
-# default PATH. Add it if cargo isn't already reachable.
+# default PATH when bash is launched from PowerShell. Ask Windows itself.
+add_to_path() {
+    local win_path="$1"
+    local unix_path
+    if command -v cygpath >/dev/null 2>&1; then
+        unix_path="$(cygpath -u "$win_path")"
+    else
+        # C:\foo\bar → /c/foo/bar
+        local drive="${win_path:0:1}"
+        local rest="${win_path:2}"
+        unix_path="/${drive,,}${rest//\\//}"
+    fi
+    export PATH="$unix_path:$PATH"
+    echo "build.sh: added $unix_path to PATH"
+}
+
 if ! command -v cargo >/dev/null 2>&1; then
-    for candidate in \
-        "${USERPROFILE:-}/.cargo/bin" \
-        "$HOME/.cargo/bin" \
-        "/c/Users/${USER:-$USERNAME}/.cargo/bin"; do
-        if [[ -n "$candidate" && (-x "$candidate/cargo" || -x "$candidate/cargo.exe") ]]; then
-            # Convert Windows path to MSYS-style if needed
-            if [[ "$candidate" == *:\\* || "$candidate" == *:/* ]]; then
-                candidate="$(cygpath -u "$candidate" 2>/dev/null || echo "$candidate")"
+    cargo_win=""
+
+    # 1. PowerShell (most reliable — no quote-escaping pitfalls)
+    if [[ -z "$cargo_win" ]] && command -v powershell.exe >/dev/null 2>&1; then
+        cargo_win="$(powershell.exe -NoProfile -Command \
+            "(Get-Command cargo -ErrorAction SilentlyContinue).Source" \
+            2>/dev/null | tr -d '\r' | head -1 || true)"
+    fi
+
+    # 2. cmd.exe `where` (note: needs //c on MSYS to avoid path-conversion)
+    if [[ -z "$cargo_win" ]] && command -v cmd.exe >/dev/null 2>&1; then
+        cargo_win="$(cmd.exe //c "where cargo.exe" 2>/dev/null | tr -d '\r' | head -1 || true)"
+    fi
+
+    # Only honor it if it actually looks like a cargo.exe path
+    if [[ "$cargo_win" =~ cargo(\.exe)?$ ]]; then
+        add_to_path "$(dirname "$cargo_win")"
+    fi
+
+    # 3. Last resort: scan well-known install locations
+    if ! command -v cargo >/dev/null 2>&1; then
+        for candidate in \
+            "$HOME/.cargo/bin" \
+            "/c/Users/${USER:-$USERNAME}/.cargo/bin"; do
+            if [[ -x "$candidate/cargo" || -x "$candidate/cargo.exe" ]]; then
+                export PATH="$candidate:$PATH"
+                echo "build.sh: added $candidate to PATH"
+                break
             fi
-            export PATH="$candidate:$PATH"
-            echo "build.sh: added $candidate to PATH"
-            break
-        fi
-    done
+        done
+    fi
 fi
 
 if ! command -v cargo >/dev/null 2>&1; then
-    echo "build.sh: cargo not found on PATH. Install rustup or add ~/.cargo/bin to PATH." >&2
+    echo "build.sh: cargo not found." >&2
+    echo "  In PowerShell, run: where.exe cargo" >&2
+    echo "  If that prints nothing, install rustup from https://rustup.rs" >&2
     exit 1
 fi
 
