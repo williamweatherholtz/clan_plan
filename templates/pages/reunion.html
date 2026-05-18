@@ -3,39 +3,32 @@
 {% block title %}{{ reunion.title }}{% endblock %}
 
 {% block reunion_content %}
-<h1 class="font-display text-2xl font-bold leading-tight mb-5" style="color:var(--ink)">{{ reunion.title }}</h1>
-
-<!-- Info card: description, key facts, RA -->
-{% let has_info = reunion.description.is_some() || reunion_date.is_some() || selected_location_name.is_some() || !ra_names.is_empty() %}
-{% if has_info %}
-<div class="mb-5 card px-5 py-4">
-  {% if let Some(desc) = reunion.description %}
-  <p class="text-gray-700 mb-3">{{ desc }}</p>
-  {% endif %}
-
-  {% let has_facts = reunion_date.is_some() || selected_location_name.is_some() %}
-  {% if has_facts %}
-  <div class="flex flex-wrap gap-4 mb-2">
+<div class="mb-6 flex items-end justify-between flex-wrap gap-4">
+  <div>
+    <h1 class="text-3xl font-bold" style="color: var(--text);">{{ reunion.title }}</h1>
     {% match reunion_date %}
     {% when Some with (rd) %}
-    <div class="flex items-center gap-1.5 text-sm text-gray-700">
-      <span class="text-base">📅</span>
-      <span class="font-medium">{{ rd.start_date }} – {{ rd.end_date }}</span>
-    </div>
+    <p class="mt-1 text-base" style="color: var(--muted);">
+      {{ rd.start_date }} – {{ rd.end_date }}{% if let Some(loc_name) = selected_location_name %} · {{ loc_name }}{% endif %}
+    </p>
     {% when None %}
-    {% endmatch %}
     {% if let Some(loc_name) = selected_location_name %}
-    <div class="flex items-center gap-1.5 text-sm text-gray-700">
-      <span class="text-base">📍</span>
-      <span class="font-medium">{{ loc_name }}</span>
-    </div>
+    <p class="mt-1 text-base" style="color: var(--muted);">{{ loc_name }}</p>
     {% endif %}
+    {% endmatch %}
   </div>
-  {% endif %}
+  <a href="{{ base_url }}/activities" class="btn btn-primary">View activities</a>
+</div>
 
+{% let has_info = reunion.description.is_some() || !ra_names.is_empty() %}
+{% if has_info %}
+<div class="mb-6 card">
+  {% if let Some(desc) = reunion.description %}
+  <p style="color: var(--text);">{{ desc }}</p>
+  {% endif %}
   {% if !ra_names.is_empty() %}
-  <p class="text-sm text-gray-500 {% if reunion.description.is_some() || has_facts %}mt-1{% endif %}">
-    Organised by <span class="font-medium text-gray-700">{{ ra_names }}</span>
+  <p class="text-sm {% if reunion.description.is_some() %}mt-3{% endif %}" style="color: var(--muted);">
+    Organised by <span class="font-bold" style="color: var(--text);">{{ ra_names }}</span>
   </p>
   {% endif %}
 </div>
