@@ -1,4 +1,5 @@
 use axum::response::{IntoResponse, Redirect, Response};
+use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::{
@@ -104,6 +105,47 @@ pub async fn maybe_auto_activate(state: &AppState, reunion: &Reunion) -> Option<
     } else {
         None
     }
+}
+
+/// For a scheduled block, return `(make_names, cleanup_names)` from the
+/// activity_rsvps of any non-cancelled meal idea promoted into this block.
+/// Used by the schedule page and the .ics export to surface make/cleanup
+/// commitments alongside the block (the buttons themselves live on the
+/// activities page; this is read-only display).
+///
+/// Returns empty vectors when the block has no linked meal idea or when
+/// no one has signed up — callers can `.is_empty()` to suppress rendering.
+pub async fn meal_rsvp_names_for_block(
+    pool: &PgPool,
+    block_id: Uuid,
+) -> (Vec<String>, Vec<String>) {
+    let rows: Vec<(String, String)> = sqlx::query_as(
+        "SELECT u.display_name, ar.role
+         FROM activity_rsvps ar
+         JOIN users u ON u.id = ar.user_id
+         JOIN activity_ideas ai ON ai.id = ar.activity_idea_id
+         WHERE ai.promoted_to_block_id = $1
+           AND ai.category = 'meal'
+           AND ai.status != 'cancelled'
+           AND ar.role IN ('make', 'cleanup')
+         ORDER BY u.display_name",
+    )
+    .bind(block_id)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+
+    let make = rows
+        .iter()
+        .filter(|(_, r)| r == "make")
+        .map(|(n, _)| n.clone())
+        .collect();
+    let cleanup = rows
+        .iter()
+        .filter(|(_, r)| r == "cleanup")
+        .map(|(n, _)| n.clone())
+        .collect();
+    (make, cleanup)
 }
 
 /// Load a reunion and verify the user has member-level access. For use in page handlers.

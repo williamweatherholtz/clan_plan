@@ -1,55 +1,70 @@
 {% extends "layout_app.html" %}
 
-{% block title %}Reunions{% endblock %}
+{% block title %}Dashboard{% endblock %}
 
 {% block content %}
-<div class="flex items-end justify-between flex-wrap gap-4 mb-8">
+<div class="flex items-end justify-between mb-8" style="border-bottom: 1px solid var(--rule); padding-bottom: 12px;">
   <div>
-    <h1 class="text-3xl font-bold" style="color: var(--text);">Reunions</h1>
-    <p class="mt-1 text-base" style="color: var(--muted);">Past, current, and upcoming family get-togethers.</p>
+    <h1 class="font-display leading-tight" style="color: var(--ink); font-size: 38px; font-variation-settings: 'opsz' 144, 'SOFT' 30, 'wght' 460;">
+      The Reunion Ledger
+    </h1>
+    <p class="mt-1 text-sm" style="color: var(--ink-3); font-family: var(--display); font-style: italic; font-variation-settings: 'opsz' 144, 'SOFT' 25, 'wght' 400;">
+      your gatherings, past and future.
+    </p>
   </div>
   {% if is_sysadmin %}
   <button onclick="document.getElementById('new-reunion-modal').classList.remove('hidden')"
-          class="btn btn-primary">
-    + New reunion
+          class="btn-primary flex items-center gap-1.5 flex-shrink-0">
+    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
+    </svg>
+    New Reunion
   </button>
   {% endif %}
 </div>
 
 {% if reunions.is_empty() %}
-<div class="card text-center px-6 py-16">
-  <p class="text-xl font-bold mb-1" style="color: var(--text);">No reunions yet</p>
+<div class="text-center py-20" style="background: var(--surface); border: 1px solid var(--rule);">
+  <p class="font-display text-2xl mb-1" style="color: var(--ink); font-variation-settings: 'opsz' 144, 'SOFT' 30, 'wght' 450;">No reunions yet</p>
   {% if is_sysadmin %}
-  <p class="text-base" style="color: var(--muted);">Create your first one with the button above.</p>
+  <p class="text-sm mt-2" style="color: var(--ink-3); font-family: var(--display); font-style: italic;">create your first gathering above.</p>
   {% else %}
-  <p class="text-base" style="color: var(--muted);">Your organiser will set one up soon.</p>
+  <p class="text-sm mt-2" style="color: var(--ink-3); font-family: var(--display); font-style: italic;">your organiser will set one up soon — check back later.</p>
   {% endif %}
 </div>
 {% else %}
-<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3" style="border: 1px solid var(--rule); background: var(--surface);">
   {% for r in reunions %}{% if r.phase_label != "Archived" %}
-  <a href="/reunions/{{ r.id }}" class="card card-interactive p-6">
-    <span class="status
-      {% if r.phase_label == "Reunion Active" %}active
-      {% else if r.phase_label == "Post-Reunion" %}success
-      {% else if r.phase_label == "Draft" %}{% else %}warning{% endif %}">
-      <span class="dot"></span>{{ r.phase_label }}
-    </span>
+  <a href="/reunions/{{ r.id }}" class="block px-7 py-7 transition-colors group"
+     style="border-right: 1px solid var(--rule-soft); border-bottom: 1px solid var(--rule-soft);">
 
-    <h2 class="text-xl font-bold mt-3 mb-1" style="color: var(--text);">{{ r.title }}</h2>
+    <!-- Status stamp -->
+    <div class="mb-3">
+      <span class="stamp
+        {% if r.phase_label == "Reunion Active" %}{% else if r.phase_label == "Voting on Locations" %}brass
+        {% else if r.phase_label == "Collecting Availability" %}brass
+        {% else if r.phase_label == "Post-Reunion" %}moss
+        {% else %}muted{% endif %}" style="font-size: 9px;">
+        {{ r.phase_label }}
+      </span>
+    </div>
+
+    <!-- Title in display italic -->
+    <h2 class="font-display leading-tight mb-3 transition-colors"
+        style="color: var(--ink); font-size: 28px; font-style: italic; font-variation-settings: 'opsz' 144, 'SOFT' 25, 'wght' 400;">
+      {{ r.title }}
+    </h2>
 
     {% if let Some(desc) = r.description %}
-    <p class="text-sm line-clamp-2" style="color: var(--muted);">{{ desc }}</p>
+    <p class="text-sm line-clamp-2 leading-relaxed font-medium mb-4" style="color: var(--ink-2);">{{ desc }}</p>
     {% endif %}
 
-    <div class="mt-4 pt-4 flex items-center justify-between text-sm" style="border-top: 1px solid var(--border-2); color: var(--muted);">
+    <div class="pt-3 flex items-center gap-2" style="border-top: 1px dashed var(--rule-soft);">
       {% if !r.ra_names.is_empty() %}
-      <span class="truncate">{{ r.ra_names }}</span>
-      {% else %}
-      <span>&nbsp;</span>
+      <span class="text-xs font-medium truncate" style="color: var(--ink-3);">Hosted by {{ r.ra_names }}</span>
       {% endif %}
       {% if let Some(slug) = r.slug %}
-      <span class="tabular" style="color: var(--muted-2);">/{{ slug }}</span>
+      <span class="ml-auto mono" style="color: var(--ink-3);">/r/{{ slug }}</span>
       {% endif %}
     </div>
   </a>
@@ -57,25 +72,26 @@
 </div>
 
 {% if has_archived %}
-<div class="mt-12" x-data="{ open: false }">
+<div class="mt-10" x-data="{ open: false }">
   <button @click="open = !open"
-          class="flex items-center gap-2 text-sm font-bold transition-colors"
-          style="color: var(--muted);">
-    <svg class="w-4 h-4 transition-transform" :class="open ? 'rotate-90' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5">
+          class="flex items-center gap-2 text-sm transition-colors font-semibold smallcaps">
+    <svg class="w-3 h-3 transition-transform" :class="open ? 'rotate-90' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5">
       <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5"/>
     </svg>
-    Past reunions
+    Past gatherings
   </button>
-  <div x-show="open" x-cloak class="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+  <div x-show="open" x-cloak class="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
+       style="border: 1px solid var(--rule-soft); background: var(--surface);">
     {% for r in reunions %}{% if r.phase_label == "Archived" %}
-    <a href="/reunions/{{ r.id }}" class="card card-interactive p-5 opacity-70 hover:opacity-100">
-      <span class="status"><span class="dot"></span>Archived</span>
-      <h2 class="text-lg font-bold mt-2" style="color: var(--text);">{{ r.title }}</h2>
+    <a href="/reunions/{{ r.id }}" class="block px-6 py-5 opacity-70 hover:opacity-100 transition-opacity"
+       style="border-right: 1px solid var(--rule-hair); border-bottom: 1px solid var(--rule-hair);">
+      <span class="stamp muted" style="font-size: 9px;">Archived</span>
+      <h3 class="font-display mt-3" style="color: var(--ink-2); font-size: 22px; font-style: italic; font-variation-settings: 'opsz' 144, 'SOFT' 25, 'wght' 400;">{{ r.title }}</h3>
       {% if let Some(desc) = r.description %}
-      <p class="mt-1 text-sm line-clamp-2" style="color: var(--muted);">{{ desc }}</p>
+      <p class="mt-2 text-sm line-clamp-2 font-medium" style="color: var(--ink-3);">{{ desc }}</p>
       {% endif %}
       {% if !r.ra_names.is_empty() %}
-      <p class="mt-2 text-xs" style="color: var(--muted-2);">{{ r.ra_names }}</p>
+      <p class="mt-2 text-xs" style="color: var(--ink-3);">Hosted by {{ r.ra_names }}</p>
       {% endif %}
     </a>
     {% endif %}{% endfor %}
@@ -85,22 +101,24 @@
 {% endif %}
 
 {% if is_sysadmin %}
-<div id="new-reunion-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4" style="background:rgba(15,23,42,0.5); backdrop-filter:blur(4px)">
-  <div class="card w-full max-w-md p-7" style="border-radius: 10px;">
-    <h2 class="text-xl font-bold mb-5" style="color: var(--text);">New reunion</h2>
+<div id="new-reunion-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4" style="background: rgba(27,22,16,.55); backdrop-filter: blur(4px)">
+  <div class="w-full max-w-md p-7" style="background: var(--surface); border: 1px solid var(--rule); box-shadow: 6px 6px 0 var(--shadow-hard);">
+    <h2 class="font-display mb-5" style="color: var(--ink); font-size: 26px; font-variation-settings: 'opsz' 144, 'SOFT' 30, 'wght' 460;">New Reunion</h2>
     <form id="new-reunion-form" class="space-y-4">
       <div>
-        <label class="block mb-1.5">Title</label>
-        <input id="nr-title" type="text" required placeholder="e.g. Summer 2026">
+        <label class="block text-sm font-bold mb-1.5 smallcaps" style="color: var(--ink-3);">Title</label>
+        <input id="nr-title" type="text" required placeholder="e.g. Summer Gathering 2026"
+               class="w-full text-sm font-medium">
       </div>
       <div>
-        <label class="block mb-1.5">Description <span class="font-normal" style="color: var(--muted-2);">(optional)</span></label>
-        <textarea id="nr-desc" rows="2" placeholder="A few words about this reunion…"></textarea>
+        <label class="block text-sm font-bold mb-1.5 smallcaps" style="color: var(--ink-3);">Description <span class="font-normal normal-case tracking-normal" style="color: var(--ink-3);">(optional)</span></label>
+        <textarea id="nr-desc" rows="2" placeholder="A few words about this reunion…"
+                  class="w-full text-sm font-medium resize-none"></textarea>
       </div>
       <div class="flex justify-end gap-3 pt-2">
         <button type="button" onclick="document.getElementById('new-reunion-modal').classList.add('hidden')"
-                class="btn btn-secondary">Cancel</button>
-        <button type="submit" class="btn btn-primary">Create</button>
+                class="btn-ghost">Cancel</button>
+        <button type="submit" class="btn-primary">Create →</button>
       </div>
     </form>
   </div>

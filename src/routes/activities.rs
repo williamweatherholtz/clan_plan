@@ -17,7 +17,7 @@ use crate::{
     state::AppState,
 };
 
-use super::helpers::{load_reunion, user_is_ra};
+use super::helpers::{ensure_member, load_reunion, user_is_ra};
 
 // ── Response types ─────────────────────────────────────────────────────────────
 
@@ -262,18 +262,12 @@ pub async fn promote_activity(
     Path((reunion_id, act_id)): Path<(Uuid, Uuid)>,
     Json(body): Json<PromoteRequest>,
 ) -> AppResult<impl IntoResponse> {
-    load_reunion(&state, reunion_id).await?;
+    let reunion = load_reunion(&state, reunion_id).await?;
+    ensure_member(&user, &state, &reunion).await?;
 
     let idea = ActivityIdea::find_by_id(state.db(), act_id).await?;
     if idea.reunion_id != reunion_id {
         return Err(AppError::NotFound);
-    }
-
-    // Author or RA only — no one else can attach an idea to the schedule.
-    let is_author = idea.proposed_by == user.id;
-    let is_ra = user_is_ra(&state, &user, reunion_id).await;
-    if !is_author && !is_ra {
-        return Err(AppError::Forbidden);
     }
 
     // Verify the block belongs to this reunion

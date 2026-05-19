@@ -171,7 +171,6 @@ pub struct NavTab {
 /// Build the reunion sub-navigation.
 /// `active_path` should match the tab's `path` field (e.g. `"activities"`).
 fn reunion_tabs(_reunion_id: Uuid, active_path: &str) -> Vec<NavTab> {
-    // Flat tab order — most-used pages first. No dropdown groups.
     // (path, label, group)
     // group 0 = always-visible top-level tabs
     // group 1 = "Setup" dropdown (planning / prep)
@@ -179,14 +178,16 @@ fn reunion_tabs(_reunion_id: Uuid, active_path: &str) -> Vec<NavTab> {
     let defs: &[(&str, &str, u8)] = &[
         ("",              "Overview",      0),
         ("activities",    "Activities",    0),
-        ("schedule",      "Schedule",      0),
-        ("today",         "Today",         0),
-        ("availability",  "Dates",         0),
-        ("locations",     "Locations",     0),
-        ("expenses",      "Expenses",      0),
-        ("media",         "Photos",        0),
-        ("survey",        "Survey",        0),
         ("settings",      "Settings",      0),
+        // Planning / prep
+        ("availability",  "Availability",  1),
+        ("locations",     "Locations",     1),
+        ("expenses",      "Expenses",      1),
+        ("survey",        "Survey",        1),
+        // During / always-on
+        ("today",         "Today",         2),
+        ("schedule",      "Schedule",      2),
+        ("media",         "Photos",        2),
     ];
     // Which group does the active tab belong to?
     let active_group = defs.iter()
@@ -272,6 +273,11 @@ pub struct ScheduleBlockPageView {
     pub slots: Vec<ScheduleSlotPageView>,
     /// True when the requesting user may edit/delete this block (creator or RA).
     pub can_modify: bool,
+    /// Comma-joined display names of users committed to make this meal.
+    /// Empty when the block isn't a meal or no one has signed up.
+    pub make_names_str: String,
+    /// Comma-joined display names of users committed to clean up this meal.
+    pub cleanup_names_str: String,
 }
 
 pub struct ScheduleDay {
@@ -586,6 +592,11 @@ struct ActivitiesPage {
     tabs: Vec<NavTab>,
     tab_label: &'static str,
     default_activity_minutes: i32,
+    /// Date-picker bounds extended 14 days past either side of the reunion;
+    /// scheduling outside `reunion_date` but within the buffer prompts a JS
+    /// confirm before submit. None when the reunion has no dates set yet.
+    schedule_min_date: Option<String>,
+    schedule_max_date: Option<String>,
 }
 
 #[derive(Template)]
@@ -1545,7 +1556,17 @@ pub async fn schedule_page(
         }
         let label = block.block_date.format("%A, %B %-d").to_string();
         let can_modify = is_ra || block.created_by == user.id;
-        let block_view = ScheduleBlockPageView { block, slots: slot_views, can_modify };
+        let (make_names, cleanup_names) =
+            helpers::meal_rsvp_names_for_block(state.db(), block.id).await;
+        let make_names_str = make_names.join(", ");
+        let cleanup_names_str = cleanup_names.join(", ");
+        let block_view = ScheduleBlockPageView {
+            block,
+            slots: slot_views,
+            can_modify,
+            make_names_str,
+            cleanup_names_str,
+        };
         if let Some(day) = days.iter_mut().find(|d| d.label == label) {
             day.blocks.push(block_view);
         } else {
@@ -1683,6 +1704,13 @@ pub async fn activities_page(
     }
 
     let default_activity_minutes = reunion.default_activity_duration_minutes;
+    let (schedule_min_date, schedule_max_date) = match &reunion_date {
+        Some(rd) => (
+            Some((rd.start_date - chrono::Duration::days(14)).to_string()),
+            Some((rd.end_date + chrono::Duration::days(14)).to_string()),
+        ),
+        None => (None, None),
+    };
     Ok(ActivitiesPage {
         user_name: user.display_name.clone(),
         is_sysadmin: user.is_sysadmin(),
@@ -1694,6 +1722,8 @@ pub async fn activities_page(
         activities,
         is_ra,
         default_activity_minutes,
+        schedule_min_date,
+        schedule_max_date,
     }
     .into_response())
 }
