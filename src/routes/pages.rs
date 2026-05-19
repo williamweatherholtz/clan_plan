@@ -171,6 +171,7 @@ pub struct NavTab {
 /// Build the reunion sub-navigation.
 /// `active_path` should match the tab's `path` field (e.g. `"activities"`).
 fn reunion_tabs(_reunion_id: Uuid, active_path: &str) -> Vec<NavTab> {
+    // Flat tab order — most-used pages first. No dropdown groups.
     // (path, label, group)
     // group 0 = always-visible top-level tabs
     // group 1 = "Setup" dropdown (planning / prep)
@@ -178,16 +179,14 @@ fn reunion_tabs(_reunion_id: Uuid, active_path: &str) -> Vec<NavTab> {
     let defs: &[(&str, &str, u8)] = &[
         ("",              "Overview",      0),
         ("activities",    "Activities",    0),
+        ("schedule",      "Schedule",      0),
+        ("today",         "Today",         0),
+        ("availability",  "Dates",         0),
+        ("locations",     "Locations",     0),
+        ("expenses",      "Expenses",      0),
+        ("media",         "Photos",        0),
+        ("survey",        "Survey",        0),
         ("settings",      "Settings",      0),
-        // Planning / prep
-        ("availability",  "Availability",  1),
-        ("locations",     "Locations",     1),
-        ("expenses",      "Expenses",      1),
-        ("survey",        "Survey",        1),
-        // During / always-on
-        ("today",         "Today",         2),
-        ("schedule",      "Schedule",      2),
-        ("media",         "Photos",        2),
     ];
     // Which group does the active tab belong to?
     let active_group = defs.iter()
