@@ -122,6 +122,44 @@ async fn require_sysadmin(session: &Session, state: &AppState) -> Result<User, R
 // Handles both `/reunions/:id/...` (direct UUID) and `/r/:slug/...` (slug →
 // DB lookup) so every page handler can serve both URL shapes without change.
 
+/// Bundles the four lookups every reunion page handler used to do by hand:
+///   1. require_login(...)
+///   2. SlugOrId resolution
+///   3. load_reunion_for_member(...)
+///   4. user_is_ra(...) + take_flash(...)
+///
+/// Use it as the first extractor in any reunion-scoped page handler to drop
+/// 4 lines of boilerplate per handler. Backed by `tokio::try_join!` so the
+/// independent admin/membership checks run in parallel.
+pub struct ReunionPageContext {
+    pub user: User,
+    pub reunion: Reunion,
+    pub is_ra: bool,
+    pub flash: Option<FlashMsg>,
+}
+
+#[async_trait]
+impl<S> FromRequestParts<S> for ReunionPageContext
+where
+    S: Send + Sync,
+    AppState: FromRef<S>,
+{
+    type Rejection = Response;
+
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+        let session = Session::from_request_parts(parts, state)
+            .await
+            .map_err(|_| Redirect::to("/login").into_response())?;
+        let app_state = AppState::from_ref(state);
+        let user = require_login(&session, &app_state).await?;
+        let SlugOrId(reunion_id) = SlugOrId::from_request_parts(parts, state).await?;
+        let reunion = helpers::load_reunion_for_member(&app_state, &user, reunion_id).await?;
+        let flash = take_flash(&session).await;
+        let is_ra = helpers::user_is_ra(&app_state, &user, reunion_id).await;
+        Ok(ReunionPageContext { user, reunion, is_ra, flash })
+    }
+}
+
 pub struct SlugOrId(pub Uuid);
 
 #[async_trait]
@@ -1643,25 +1681,60 @@ pub async fn activities_page(
     let ideas = ActivityIdea::list_for_reunion(state.db(), reunion_id)
         .await?;
 
+    // ── Bulk-fetch what the per-idea loop used to fetch one-at-a-time.
+    //    Previously: 1 + (N × 3) queries — comment summary, rsvp rows, and
+    //    proposer per idea. Now: 1 + 3 queries total, regardless of N.
+
+    let summaries = ActivityIdea::summaries_for_reunion(state.db(), reunion_id)
+        .await
+        .unwrap_or_default();
+    let summary_map: std::collections::HashMap<uuid::Uuid, i64> = summaries
+        .into_iter()
+        .map(|s| (s.idea_id, s.comment_count))
+        .collect();
+
+    let all_rsvps: Vec<(uuid::Uuid, uuid::Uuid, String, String)> = sqlx::query_as(
+        "SELECT ar.activity_idea_id, ar.user_id, u.display_name, ar.role
+         FROM activity_rsvps ar
+         JOIN users u           ON u.id  = ar.user_id
+         JOIN activity_ideas ai ON ai.id = ar.activity_idea_id
+         WHERE ai.reunion_id = $1
+         ORDER BY u.display_name",
+    )
+    .bind(reunion_id)
+    .fetch_all(state.db())
+    .await
+    .unwrap_or_default();
+    let mut rsvps_by_idea: std::collections::HashMap<uuid::Uuid, Vec<(uuid::Uuid, String, String)>> =
+        std::collections::HashMap::new();
+    for (idea_id, uid, name, role) in all_rsvps {
+        rsvps_by_idea
+            .entry(idea_id)
+            .or_default()
+            .push((uid, name, role));
+    }
+
+    let proposer_rows: Vec<(uuid::Uuid, String, Option<String>)> = sqlx::query_as(
+        "SELECT DISTINCT u.id, u.display_name, f.name
+         FROM users u
+         LEFT JOIN family_units f ON f.id = u.family_unit_id
+         WHERE u.id IN (SELECT DISTINCT proposed_by FROM activity_ideas WHERE reunion_id = $1)",
+    )
+    .bind(reunion_id)
+    .fetch_all(state.db())
+    .await
+    .unwrap_or_default();
+    let proposer_map: std::collections::HashMap<uuid::Uuid, (String, Option<String>)> =
+        proposer_rows
+            .into_iter()
+            .map(|(id, name, family)| (id, (name, family)))
+            .collect();
+
     let mut activities = Vec::new();
     for idea in ideas {
-        let summary = ActivityIdea::for_idea(state.db(), idea.id)
-            .await
-            .unwrap_or(ActivitySummary {
-                idea_id: idea.id,
-                comment_count: 0,
-            });
-        let rsvp_rows = sqlx::query_as::<_, (uuid::Uuid, String, String)>(
-            "SELECT ar.user_id, u.display_name, ar.role
-             FROM activity_rsvps ar
-             JOIN users u ON u.id = ar.user_id
-             WHERE ar.activity_idea_id = $1
-             ORDER BY u.display_name",
-        )
-        .bind(idea.id)
-        .fetch_all(state.db())
-        .await
-        .unwrap_or_else(|e| { tracing::warn!("pages.rs:{} db error (returning empty): {{e:?}}", line!()); Default::default() });
+        let comment_count = summary_map.get(&idea.id).copied().unwrap_or(0);
+        let empty_rsvps: Vec<(uuid::Uuid, String, String)> = Vec::new();
+        let rsvp_rows = rsvps_by_idea.get(&idea.id).unwrap_or(&empty_rsvps);
         let names_for = |role: &str| -> Vec<&str> {
             rsvp_rows
                 .iter()
@@ -1687,22 +1760,14 @@ pub async fn activities_page(
             .iter()
             .any(|(uid, _, r)| *uid == user.id && r == "cleanup");
         let cleanup_names_str = cleanup_names.join(", ");
-        let proposer: (String, Option<String>) = sqlx::query_as(
-            "SELECT u.display_name, f.name
-             FROM users u
-             LEFT JOIN family_units f ON f.id = u.family_unit_id
-             WHERE u.id = $1",
-        )
-        .bind(idea.proposed_by)
-        .fetch_optional(state.db())
-        .await
-        .ok()
-        .flatten()
-        .unwrap_or_else(|| ("Unknown".to_string(), None));
+        let proposer = proposer_map
+            .get(&idea.proposed_by)
+            .cloned()
+            .unwrap_or_else(|| ("Unknown".to_string(), None));
         let is_own_idea = idea.proposed_by == user.id;
         activities.push(ActivityPageView {
             idea,
-            comment_count: summary.comment_count,
+            comment_count,
             rsvp_count,
             my_rsvp,
             rsvp_names_str,

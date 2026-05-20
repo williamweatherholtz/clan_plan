@@ -35,11 +35,32 @@ pub async fn list_expenses(
     load_reunion_for_api_member(&state, &user, reunion_id).await?;
 
     let expenses = Expense::list_for_reunion(state.db(), reunion_id).await?;
-    let mut result = Vec::with_capacity(expenses.len());
-    for expense in expenses {
-        let splits = ExpenseSplit::list_for_expense(state.db(), expense.id).await?;
-        result.push(ExpenseWithSplits { expense, splits });
+
+    // Bulk-fetch every split for the whole reunion in one query, then group
+    // by expense_id in Rust. Previously this loop did one fetch per expense
+    // — for a reunion with N expenses, that was 1 + N round trips.
+    let all_splits: Vec<ExpenseSplit> = sqlx::query_as::<_, ExpenseSplit>(
+        "SELECT es.*
+         FROM expense_splits es
+         JOIN expenses e ON e.id = es.expense_id
+         WHERE e.reunion_id = $1",
+    )
+    .bind(reunion_id)
+    .fetch_all(state.db())
+    .await?;
+    let mut splits_by_expense: std::collections::HashMap<Uuid, Vec<ExpenseSplit>> =
+        std::collections::HashMap::new();
+    for s in all_splits {
+        splits_by_expense.entry(s.expense_id).or_default().push(s);
     }
+
+    let result: Vec<ExpenseWithSplits> = expenses
+        .into_iter()
+        .map(|expense| {
+            let splits = splits_by_expense.remove(&expense.id).unwrap_or_default();
+            ExpenseWithSplits { expense, splits }
+        })
+        .collect();
 
     Ok(Json(result))
 }
