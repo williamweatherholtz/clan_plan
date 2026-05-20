@@ -1041,45 +1041,17 @@ pub async fn dashboard(
 ) -> Result<Response, Response> {
     let user = require_login(&session, &state).await?;
 
-    // Determine which reunions this user can access.
-    // Load membership data in two efficient queries.
-    let user_ra_ids: Vec<Uuid> = sqlx::query_scalar(
-        "SELECT reunion_id FROM reunion_admins WHERE user_id = $1",
+    // Single SQL call returns reunions the user can see (sysadmin sees all,
+    // non-sysadmins see RA-of / family-unit-of / invited-to, with Draft
+    // filtered out for non-RAs). Was 4 separate queries + Rust-side filter.
+    let all_accessible = Reunion::list_accessible(
+        state.db(),
+        user.id,
+        user.family_unit_id,
+        user.is_sysadmin(),
     )
-    .bind(user.id)
-    .fetch_all(state.db())
-    .await
-    .unwrap_or_else(|e| { tracing::warn!("pages.rs:{} db error (returning empty): {{e:?}}", line!()); Default::default() });
-
-    let user_enrolled_ids: Vec<Uuid> = if let Some(fu_id) = user.family_unit_id {
-        sqlx::query_scalar(
-            "SELECT reunion_id FROM reunion_family_units WHERE family_unit_id = $1",
-        )
-        .bind(fu_id)
-        .fetch_all(state.db())
-        .await
-        .unwrap_or_default()
-    } else {
-        vec![]
-    };
-
-    let user_invite_ids: Vec<Uuid> = sqlx::query_scalar(
-        "SELECT reunion_id FROM reunion_invite_members WHERE user_id = $1",
-    )
-    .bind(user.id)
-    .fetch_all(state.db())
-    .await
-    .unwrap_or_else(|e| { tracing::warn!("pages.rs:{} db error (returning empty): {{e:?}}", line!()); Default::default() });
-
-    let all = Reunion::list_all(state.db()).await?;
-
-    // Filter to reunions accessible to this user.
-    let accessible: Vec<&Reunion> = all.iter().filter(|r| {
-        if user.is_sysadmin() { return true; }
-        let is_ra = user_ra_ids.contains(&r.id);
-        if r.phase == Phase::Draft { return is_ra; }
-        is_ra || user_enrolled_ids.contains(&r.id) || user_invite_ids.contains(&r.id)
-    }).collect();
+    .await?;
+    let accessible: Vec<&Reunion> = all_accessible.iter().collect();
 
     // If the user has exactly one accessible reunion and it is not in Draft, go straight to it.
     // If there are also Draft-phase reunions visible (i.e. the user is an RA setting one up),
