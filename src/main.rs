@@ -183,6 +183,15 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
+    // One-shot cleanup of stale failed-login records so the table stays
+    // bounded. We don't run this on a schedule — boot is sufficient for
+    // an app that's typically restarted weekly or more often.
+    match clanplan::models::login_attempt::LoginAttempt::cleanup_old(&db).await {
+        Ok(n) if n > 0 => tracing::info!(rows = n, "pruned stale login_attempts"),
+        Ok(_) => {}
+        Err(e) => tracing::warn!("login_attempts cleanup failed: {e:?}"),
+    }
+
     let state = AppState::new(config.clone(), db, mailer, google_client);
 
     let api = Router::new()

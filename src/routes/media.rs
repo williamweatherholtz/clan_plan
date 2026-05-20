@@ -194,35 +194,66 @@ pub async fn download_all_zip(
     let items = Media::list_for_reunion(state.db(), reunion_id).await?;
 
     let storage_root_str = state.config().media_storage_path.clone();
-    let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
 
-    let buf = {
-        let mut inner: Vec<u8> = Vec::new();
-        let mut zip = ZipWriter::new(Cursor::new(&mut inner));
+    // Resolve every member's absolute path AND its byte length up front so we
+    // can (a) refuse archives that would balloon memory and (b) hand the
+    // (path, name) list to a blocking worker for the actual zip build.
+    // Hard cap of 500 MiB is generous for most family reunions but stops the
+    // 100-file × 25 MiB pathological case the critique flagged.
+    const ZIP_MAX_BYTES: u64 = 500 * 1024 * 1024;
 
-        for item in &items {
-            let Some(abs_path) = safe_media_path(&storage_root_str, &item.file_path).await else {
-                tracing::warn!("skipping media {} — path outside storage root", item.id);
+    let mut entries: Vec<(PathBuf, String, u64)> = Vec::with_capacity(items.len());
+    let mut total_bytes: u64 = 0;
+    for item in &items {
+        let Some(abs_path) = safe_media_path(&storage_root_str, &item.file_path).await else {
+            tracing::warn!("skipping media {} — path outside storage root", item.id);
+            continue;
+        };
+        let len = match fs::metadata(&abs_path).await {
+            Ok(m) => m.len(),
+            Err(e) => {
+                tracing::warn!("skipping missing file {}: {e}", abs_path.display());
                 continue;
-            };
-            match fs::read(&abs_path).await {
+            }
+        };
+        total_bytes = total_bytes.saturating_add(len);
+        if total_bytes > ZIP_MAX_BYTES {
+            return Err(AppError::BadRequest(
+                "the zip archive would exceed 500 MiB — download individual files instead".into(),
+            ));
+        }
+        entries.push((abs_path, item.original_filename.clone(), len));
+    }
+
+    // ZipWriter does compressed, CPU-bound work and reads files synchronously.
+    // Running it on the tokio runtime worker would stall every other request
+    // for the duration; spawn_blocking parks it on the blocking pool instead.
+    let buf = tokio::task::spawn_blocking(move || -> Result<Vec<u8>, std::io::Error> {
+        let mut inner: Vec<u8> = Vec::with_capacity(total_bytes as usize / 2);
+        let mut zip = ZipWriter::new(Cursor::new(&mut inner));
+        let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+
+        for (abs_path, name, _len) in &entries {
+            match std::fs::read(abs_path) {
                 Ok(bytes) => {
-                    if zip.start_file(&item.original_filename, options).is_ok() {
+                    if zip.start_file(name, options).is_ok() {
                         if let Err(e) = zip.write_all(&bytes) {
-                            tracing::warn!("zip write error for media {}: {e}", item.id);
+                            tracing::warn!("zip write error for {}: {e}", abs_path.display());
                         }
                     }
                 }
                 Err(e) => {
-                    tracing::warn!("skipping missing file {}: {e}", abs_path.display());
+                    tracing::warn!("skipping disappeared file {}: {e}", abs_path.display());
                 }
             }
         }
 
-        zip.finish()
-            .map_err(|e| AppError::Internal(anyhow::anyhow!("zip finish: {e}")))?;
-        inner
-    };
+        zip.finish().map_err(std::io::Error::other)?;
+        Ok(inner)
+    })
+    .await
+    .map_err(|e| AppError::Internal(anyhow::anyhow!("zip join: {e}")))?
+    .map_err(|e| AppError::Internal(anyhow::anyhow!("zip finish: {e}")))?;
 
     let filename = format!(
         "{}_media.zip",

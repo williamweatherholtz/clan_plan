@@ -175,9 +175,15 @@ pub async fn login(
     // Use a generic error message to prevent email enumeration
     let auth_err = || AppError::Unauthorized;
 
-    // S-03/04: Check for too many recent failures before doing any DB work
-    let recent = LoginAttempt::recent_count(state.db(), &body.email).await.unwrap_or(0);
-    if recent >= MAX_FAILURES {
+    // S-03/04: Check for too many recent failures before doing any DB work.
+    // Counting by email AND ip closes the trivial bypass of rotating
+    // addresses past the email-only threshold.
+    let ip = extract_ip(&headers);
+    let (recent_by_email, recent_by_ip) =
+        LoginAttempt::recent_count(state.db(), &body.email, &ip)
+            .await
+            .unwrap_or((0, 0));
+    if recent_by_email >= MAX_FAILURES || recent_by_ip >= MAX_FAILURES {
         return Err(AppError::BadRequest(
             "too many failed attempts — please wait 15 minutes and try again".into(),
         ));
@@ -198,7 +204,6 @@ pub async fn login(
 
     if !password::verify_password(&body.password, hash).await {
         // Record failure for rate limiting; best-effort — don't fail the request
-        let ip = extract_ip(&headers);
         let _ = LoginAttempt::record(state.db(), &body.email, &ip).await;
         return Err(auth_err());
     }
