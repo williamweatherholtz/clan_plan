@@ -279,6 +279,26 @@ async fn main() -> anyhow::Result<()> {
             } else {
                 HeaderValue::from_static("max-age=0")
             },
+        ))
+        // Content-Security-Policy: documents AND enforces the script/style/font
+        // origins the app actually uses. 'unsafe-inline' is regrettable but
+        // necessary today because templates have inline <script> blocks and
+        // onclick="..." attributes — once those move to data-action delegated
+        // handlers + per-page JS files (critique P1-15 / P2-29), we can drop
+        // 'unsafe-inline' from script-src and tighten further.
+        .layer(SetResponseHeaderLayer::if_not_present(
+            axum::http::header::CONTENT_SECURITY_POLICY,
+            HeaderValue::from_static(
+                "default-src 'self'; \
+                 script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; \
+                 style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; \
+                 font-src 'self' https://fonts.gstatic.com; \
+                 img-src 'self' data: https://lh3.googleusercontent.com https://avatars.githubusercontent.com; \
+                 connect-src 'self'; \
+                 frame-ancestors 'none'; \
+                 base-uri 'self'; \
+                 form-action 'self'",
+            ),
         ));
 
     // Raise the body limit so multipart file uploads work.

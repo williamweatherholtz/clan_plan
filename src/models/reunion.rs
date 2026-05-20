@@ -123,6 +123,38 @@ impl Reunion {
         )
     }
 
+    /// List reunions the given user may see at member level. Sysadmins see
+    /// everything (including Draft). Non-sysadmins see reunions where they
+    /// are an admin, where their family unit is enrolled, or where they
+    /// joined via an invite link — and Draft-phase reunions are filtered
+    /// out for non-RA members.
+    ///
+    /// Push the membership filter into SQL so we never serialize a Draft
+    /// reunion to a non-member over `/api/reunions`.
+    pub async fn list_accessible(
+        pool: &PgPool,
+        user_id: Uuid,
+        user_family_unit_id: Option<Uuid>,
+        is_sysadmin: bool,
+    ) -> AppResult<Vec<Reunion>> {
+        if is_sysadmin {
+            return Self::list_all(pool).await;
+        }
+        Ok(sqlx::query_as::<_, Reunion>(
+            "SELECT DISTINCT r.* FROM reunions r
+             LEFT JOIN reunion_admins         ra  ON ra.reunion_id  = r.id AND ra.user_id  = $1
+             LEFT JOIN reunion_family_units   rfu ON rfu.reunion_id = r.id AND rfu.family_unit_id = $2
+             LEFT JOIN reunion_invite_members rim ON rim.reunion_id = r.id AND rim.user_id = $1
+             WHERE ra.user_id IS NOT NULL
+                OR (r.phase <> 'draft' AND (rfu.family_unit_id IS NOT NULL OR rim.user_id IS NOT NULL))
+             ORDER BY r.created_at DESC",
+        )
+        .bind(user_id)
+        .bind(user_family_unit_id)
+        .fetch_all(pool)
+        .await?)
+    }
+
     /// Advance the phase by one step. Uses an optimistic UPDATE so concurrent
     /// advances produce a clear conflict error rather than silently double-advancing.
     pub async fn advance_phase(pool: &PgPool, reunion_id: Uuid, current: &Phase) -> AppResult<Reunion> {

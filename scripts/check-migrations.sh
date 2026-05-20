@@ -95,3 +95,81 @@ fi
 if (( fail )); then
     exit 1
 fi
+
+# ── Lockfile checksum check ───────────────────────────────────────────────────
+# migrations/.lock pins the sha256 of every committed migration file. The
+# pre-commit hook already blocks edits to committed migrations; this script
+# catches the case where the hook didn't run (fresh clone, --no-verify, CI
+# checkout) by failing the build/deploy if any byte has drifted.
+#
+# Regenerate after intentionally adding a new migration:
+#   scripts/check-migrations.sh --update-lock
+LOCKFILE="$MIGRATIONS_DIR/.lock"
+
+# Choose a portable sha256 invoker.
+sha256_of() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$1" | awk '{print $1}'
+    else
+        shasum -a 256 "$1" | awk '{print $1}'
+    fi
+}
+
+if [[ "${1:-}" == "--update-lock" ]]; then
+    : > "$LOCKFILE"
+    for path in "${files[@]}"; do
+        name="$(basename "$path")"
+        sum="$(sha256_of "$path")"
+        printf '%s  %s\n' "$sum" "$name" >> "$LOCKFILE"
+    done
+    echo "check-migrations: wrote $LOCKFILE (${#files[@]} entries)"
+    exit 0
+fi
+
+if [[ ! -f "$LOCKFILE" ]]; then
+    # First run: surface the situation but don't fail. The next intentional
+    # change will trigger --update-lock and the lock takes effect from then on.
+    echo "check-migrations: no $LOCKFILE — skipping checksum check (run with --update-lock to create)" >&2
+    exit 0
+fi
+
+lock_fail=0
+declare -A lock_map=()
+while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ -z "$line" || "$line" =~ ^# ]] && continue
+    sum="${line%% *}"
+    file="${line##* }"
+    lock_map["$file"]="$sum"
+done < "$LOCKFILE"
+
+for path in "${files[@]}"; do
+    name="$(basename "$path")"
+    expected="${lock_map[$name]:-}"
+    actual="$(sha256_of "$path")"
+    if [[ -z "$expected" ]]; then
+        echo "check-migrations: $name has no entry in $LOCKFILE — run --update-lock to add" >&2
+        lock_fail=1
+        continue
+    fi
+    if [[ "$expected" != "$actual" ]]; then
+        echo "check-migrations: checksum mismatch for $name" >&2
+        echo "  expected: $expected" >&2
+        echo "  actual:   $actual" >&2
+        echo "  if this change is intentional, run scripts/check-migrations.sh --update-lock" >&2
+        echo "  if not, restore the file (typical cause: line-ending drift on Windows)." >&2
+        lock_fail=1
+    fi
+    unset 'lock_map[$name]'
+done
+
+# Anything left in lock_map was committed previously and is now missing from disk.
+for stale in "${!lock_map[@]}"; do
+    echo "check-migrations: $stale is in $LOCKFILE but missing from disk" >&2
+    lock_fail=1
+done
+
+if (( lock_fail )); then
+    exit 1
+fi
+
+printf 'check-migrations: lockfile OK (%d entries match)\n' "${#files[@]}"

@@ -61,7 +61,15 @@ pub async fn list_reunions(
     user: CurrentUser,
     State(state): State<AppState>,
 ) -> AppResult<impl IntoResponse> {
-    let reunions = Reunion::list_all(state.db()).await?;
+    // Push the membership filter into SQL so Draft-phase reunions never leak
+    // to non-members via /api/reunions.
+    let reunions = Reunion::list_accessible(
+        state.db(),
+        user.id,
+        user.family_unit_id,
+        user.is_sysadmin(),
+    )
+    .await?;
     Ok(Json(reunions))
 }
 
