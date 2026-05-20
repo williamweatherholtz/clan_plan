@@ -15,7 +15,8 @@
 
 {% block content %}
 <!-- ── Tab bar: top-level tabs (group 0) + Plan dropdown (group 1) ────── -->
-<div class="mb-8" style="border-bottom: 1px solid var(--border-2);">
+<!-- relative z-50 keeps the Plan dropdown above page cards. Do not lower. -->
+<div class="mb-8 relative z-50" style="border-bottom: 1px solid var(--border-2);">
   <div class="flex items-center gap-6 sm:gap-8 flex-wrap">
     {% for tab in tabs %}
       {% if tab.group == 0 %}
@@ -29,7 +30,8 @@
     <!-- Plan dropdown: pre-day setup pages (Dates, Locations, Expenses, Survey, Photos, Settings) -->
     <div class="relative" x-data="{ open: false }">
       <button @click="open = !open" type="button"
-              class="tab-inactive flex items-center gap-1 whitespace-nowrap"
+              class="tab-inactive items-center gap-1 whitespace-nowrap"
+              style="display: inline-flex;"
               :class="open ? 'tab-active' : ''">
         <span>Plan</span>
         <svg class="w-3 h-3" :class="open ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5">

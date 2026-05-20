@@ -7,8 +7,11 @@ function applyTheme(theme) {
   const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
   const useDark = theme === 'dark' || (theme === 'system' && prefersDark);
   document.documentElement.classList.toggle('dark', useDark);
+  document.documentElement.setAttribute('data-theme', useDark ? 'dark' : 'light');
   document.documentElement.setAttribute('data-theme-pref', theme);
   localStorage.setItem('theme', theme);
+  const btn = document.getElementById('theme-toggle');
+  if (btn) btn.textContent = { light: '☀️', dark: '🌙', system: '💻' }[theme] || '💻';
 }
 
 function cycleTheme() {
