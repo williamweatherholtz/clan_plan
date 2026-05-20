@@ -24,7 +24,7 @@ use crate::{
 };
 
 use super::{
-    helpers::{get_reunion_tz_string, load_reunion},
+    helpers::{get_reunion_tz_string, load_reunion, meal_rsvp_names_for_block},
     schedule::{BlockWithSlots, SlotWithSignups},
 };
 
@@ -120,8 +120,6 @@ pub async fn get_ics(
         let dtstart = local_to_utc(block.block_date, block.start_time, tz);
         let dtend   = local_to_utc(block.block_date, block.end_time,   tz);
         let summary = escape_ics(&block.title);
-        let desc = block.description.as_deref().map(escape_ics).unwrap_or_default();
-
         // LOCATION assembly: prefer block.location_note when set, AND always
         // append the reunion's selected location (with address) so map apps
         // can hand off to navigation. If the block has no note we just use
@@ -135,6 +133,24 @@ pub async fn get_ics(
             (false, false) => format!("{block_loc} — {reunion_loc}"),
         };
         let location = if combined.is_empty() { String::new() } else { escape_ics(&combined) };
+
+        // DESCRIPTION = block.description + meal make/cleanup commitments, joined
+        // by the iCal-escaped line break "\n" (RFC 5545 §3.3.11). Each piece is
+        // individually escape_ics()'d; the literal "Make:"/"Cleanup:" labels are
+        // safe ASCII and need no escaping.
+        let mut desc_parts: Vec<String> = Vec::new();
+        if let Some(d) = &block.description {
+            desc_parts.push(escape_ics(d));
+        }
+        let (make_names, cleanup_names) =
+            meal_rsvp_names_for_block(state.db(), block.id).await;
+        if !make_names.is_empty() {
+            desc_parts.push(format!("Make: {}", escape_ics(&make_names.join(", "))));
+        }
+        if !cleanup_names.is_empty() {
+            desc_parts.push(format!("Cleanup: {}", escape_ics(&cleanup_names.join(", "))));
+        }
+        let desc = desc_parts.join("\\n");
 
         ics.push_str(&format!(
             "BEGIN:VEVENT\r\n\

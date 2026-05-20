@@ -351,4 +351,16 @@ input[type="range"] { accent-color: var(--accent); }
 .dark .border-indigo-100,
 .dark .border-indigo-200 { border-color: var(--border-2) !important; }
 .dark .bg-gray-50,
-.dark .bg-gray-100 { background-color: var(--surface-2) !important; }
+.dark .bg-gray-100,
+.dark .bg-wash,
+.dark .hover\:bg-wash:hover { background-color: var(--surface-2) !important; }
+/* Tinted "soft" hover backgrounds — keep the hue but use a dark-mode-safe
+   surface so hardcoded text-{color}-700 sit on a dark base instead of a
+   light tint that fights with light text. */
+.dark .hover\:bg-green-50:hover,
+.dark .hover\:bg-amber-50:hover,
+.dark .hover\:bg-red-50:hover,
+.dark .hover\:bg-rose-50:hover,
+.dark .hover\:bg-indigo-50:hover,
+.dark .hover\:bg-blue-50:hover,
+.dark .hover\:bg-orange-50:hover { background-color: var(--surface-2) !important; }

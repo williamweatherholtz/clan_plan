@@ -17,7 +17,10 @@
     {% endif %}
     {% endmatch %}
   </div>
-  <a href="{{ base_url }}/activities" class="btn btn-primary">View activities</a>
+  <div class="flex gap-2 flex-wrap">
+    <a href="{{ base_url }}/activities" class="btn btn-primary">Check events</a>
+    <a href="{{ base_url }}/schedule" class="btn btn-secondary">View full schedule</a>
+  </div>
 </div>
 
 {% let has_info = reunion.description.is_some() || !ra_names.is_empty() %}

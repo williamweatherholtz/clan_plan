@@ -136,7 +136,10 @@ fi
 # We auto-rebuild every time so the committed tailwind.css matches templates.
 if command -v npx >/dev/null 2>&1; then
     log "rebuilding tailwind.css"
-    npx --yes tailwindcss -i assets/input.css -o assets/tailwind.css --minify
+    # Pin to v3 — tailwindcss@4 moved the CLI to the separate `@tailwindcss/cli`
+    # package, so plain `npx --yes tailwindcss` errors with "could not determine
+    # executable to run". package.json pins ^3.4.0; match it here.
+    npx --yes tailwindcss@^3.4.0 -i assets/input.css -o assets/tailwind.css --minify
     if ! git diff --quiet assets/tailwind.css; then
         echo "⚠ assets/tailwind.css changed during rebuild — commit it before pushing the image"
         echo "  (otherwise the next build will rebuild it again and you'll keep seeing this)"

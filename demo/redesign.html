@@ -1,0 +1,1359 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Clan Plan — Heirloom Modern · Redesign Demo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght,SOFT,WONK@0,9..144,300..900,0..100,0..1;1,9..144,300..900,0..100,0..1&family=Geist:wght@300..800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<!-- Anti-flash: resolve theme before paint -->
+<script>
+  (function(){
+    var stored = localStorage.getItem('cp-theme') || 'system';
+    var resolved = stored === 'system'
+      ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+      : stored;
+    document.documentElement.setAttribute('data-theme', resolved);
+    document.documentElement.setAttribute('data-theme-pref', stored);
+    var view = localStorage.getItem('cp-view') || 'host';
+    document.documentElement.setAttribute('data-view', view);
+  })();
+</script>
+
+<style>
+  /* ─────────────────────────────────────────────────────────────────────
+     CLAN PLAN · Heirloom Modern
+     Light: parchment + moss + brass + ink.
+     Dark:  walnut + sage + brass + cream.
+     ───────────────────────────────────────────────────────────────────── */
+
+  /* LIGHT (default) */
+  :root, [data-theme="light"]{
+    --cream:        #F2EAD6;
+    --cream-deep:   #E8DCC0;
+    --paper:        #FBF5E5;
+    --paper-2:      #FFFCF6;
+    --ink:          #1B1610;
+    --ink-2:        #3A2E20;
+    --ink-3:        #6B5C46;
+    --moss:         #1E3A2A;
+    --moss-2:       #2A5239;
+    --moss-mute:    #4A6B55;
+    --brass:        #B8893E;
+    --brass-2:      #D4A55F;
+    --brass-deep:   #8E6622;
+    --burgundy:     #7A2A22;
+    --burgundy-soft:#A33D33;
+    --linen:        #DDD0B4;
+    --rule:         rgba(27,22,16,.85);
+    --rule-soft:    rgba(27,22,16,.18);
+    --rule-hair:    rgba(27,22,16,.10);
+    --shadow-hard:  rgba(27,22,16,1);
+    --vignette:     rgba(46,32,12,.18);
+    --grain-color:  "0 0 0 0 0.10  0 0 0 0 0.08  0 0 0 0 0.05  0 0 0 0.13 0";
+    --grain-blend:  multiply;
+    --grain-opacity:0.45;
+  }
+
+  /* DARK — warm walnut, not navy. Heirloom in low light. */
+  [data-theme="dark"]{
+    --cream:        #1A140E;     /* deep walnut canvas */
+    --cream-deep:   #120E08;
+    --paper:        #221A11;     /* raised leather surface */
+    --paper-2:      #2A2117;
+    --ink:          #F2E6CD;     /* warm cream text */
+    --ink-2:        #D7C5A1;
+    --ink-3:        #93826A;
+    --moss:         #88B596;     /* lifted sage so it actually reads */
+    --moss-2:       #B0D2BB;
+    --moss-mute:    #5E8770;
+    --brass:        #D4A55F;
+    --brass-2:      #E8C188;
+    --brass-deep:   #C58E36;
+    --burgundy:     #E18A6E;     /* candle-glow coral on walnut */
+    --burgundy-soft:#C76952;
+    --linen:        #3A2E20;
+    --rule:         rgba(242,230,205,.55);
+    --rule-soft:    rgba(242,230,205,.18);
+    --rule-hair:    rgba(242,230,205,.09);
+    --shadow-hard:  rgba(0,0,0,.8);
+    --vignette:     rgba(0,0,0,.55);
+    --grain-blend:  screen;
+    --grain-opacity:0.18;
+  }
+
+  /* Smooth-ish theme swap */
+  html{ transition: background-color .25s ease }
+  body, .hero, .blocks, .ledger, .entry, .panel, .rotation, .phases,
+  header.masthead, footer.colophon, .btn, .ico-btn, .stamp,
+  .hero-fact, .block, .loc, .sw-row, .host-card{
+    transition: background-color .25s ease, border-color .25s ease, color .2s ease, box-shadow .2s ease;
+  }
+
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  html{
+    color:var(--ink);
+    background:var(--cream);
+    font-family:"Geist", -apple-system, system-ui, sans-serif;
+    font-feature-settings:"ss01","cv11";
+    -webkit-font-smoothing:antialiased;
+  }
+
+  body{
+    position:relative;
+    min-height:100vh;
+    background:
+      radial-gradient(ellipse at top, rgba(212,165,95,.05), transparent 60%),
+      radial-gradient(ellipse at bottom right, rgba(30,58,42,.04), transparent 60%),
+      var(--cream);
+  }
+  body::before{
+    content:"";
+    position:fixed; inset:0;
+    pointer-events:none;
+    z-index:1;
+    opacity:var(--grain-opacity);
+    mix-blend-mode:var(--grain-blend);
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='1.2' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.55  0 0 0 0 0.45  0 0 0 0 0.30  0 0 0 0.18 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+  }
+  body::after{
+    content:"";
+    position:fixed; inset:0;
+    pointer-events:none;
+    z-index:2;
+    box-shadow:inset 0 0 180px var(--vignette);
+  }
+  main, header, footer{ position:relative; z-index:3 }
+
+  /* ───── Typography ───── */
+  h1,h2,h3,h4{
+    font-family:"Fraunces", "Times New Roman", serif;
+    font-weight:500; letter-spacing:-.01em; color:var(--ink); margin:0
+  }
+  p{margin:0; line-height:1.6}
+  a{color:inherit; text-decoration:none}
+  .display-italic{
+    font-family:"Fraunces", serif;
+    font-style:italic;
+    font-variation-settings:"opsz" 144, "SOFT" 30, "wght" 400;
+  }
+  .smallcaps{
+    font-size:11px;
+    letter-spacing:.22em;
+    text-transform:uppercase;
+    font-weight:600;
+    color:var(--ink-3);
+  }
+  .num{
+    font-family:"Fraunces", serif;
+    font-style:italic;
+    font-variation-settings:"opsz" 144, "SOFT" 20, "wght" 400;
+  }
+  .mono{font-family:"JetBrains Mono", ui-monospace, monospace; font-size:11px; letter-spacing:.04em}
+
+  .frame{
+    max-width:1280px;
+    margin:0 auto;
+    padding:0 48px;
+  }
+  @media (max-width:720px){ .frame{padding:0 20px} }
+
+  /* ───── Masthead ───── */
+  header.masthead{
+    border-bottom:2px solid var(--rule);
+    padding:18px 0 14px;
+    background:linear-gradient(to bottom, rgba(232,220,192,.4), transparent);
+  }
+  [data-theme="dark"] header.masthead{
+    background:linear-gradient(to bottom, rgba(212,165,95,.06), transparent);
+  }
+  .masthead-row{
+    display:grid;
+    grid-template-columns:1fr auto 1fr;
+    align-items:center;
+    gap:24px;
+  }
+  .masthead-meta{ display:flex; flex-direction:column; gap:2px }
+  .masthead-meta .smallcaps{ font-size:10px; letter-spacing:.18em }
+  .masthead-meta .date{
+    font-family:"Fraunces", serif;
+    font-style:italic;
+    font-size:14px;
+    color:var(--ink-2);
+  }
+  .wordmark{
+    font-family:"Fraunces", serif;
+    font-size:48px;
+    line-height:1;
+    font-variation-settings:"opsz" 144, "SOFT" 0, "wght" 520, "WONK" 0;
+    letter-spacing:-.02em;
+    text-align:center;
+    color:var(--ink);
+  }
+  .masthead-actions{ display:flex; justify-content:flex-end; gap:8px; align-items:center }
+
+  .ico-btn{
+    width:36px; height:36px;
+    border:1px solid var(--rule);
+    background:var(--paper);
+    border-radius:0;
+    display:inline-flex; align-items:center; justify-content:center;
+    cursor:pointer;
+    color:var(--ink);
+  }
+  .ico-btn:hover{ background:var(--cream-deep); transform:translateY(-1px) }
+  .ico-btn svg{width:16px; height:16px}
+  .ico-btn[data-active="true"]{
+    background:var(--moss); color:var(--cream); border-color:var(--moss);
+  }
+  [data-theme="dark"] .ico-btn[data-active="true"]{ color:var(--cream) }
+
+  /* Theme + view chooser */
+  .chooser{
+    display:inline-flex;
+    border:1px solid var(--rule);
+    background:var(--paper);
+    margin-right:6px;
+  }
+  .chooser button{
+    appearance:none; border:0; background:transparent;
+    width:32px; height:34px; cursor:pointer;
+    display:inline-flex; align-items:center; justify-content:center;
+    color:var(--ink-3);
+    border-right:1px solid var(--rule-soft);
+    font-family:"Geist", sans-serif;
+    font-size:11px; font-weight:600; letter-spacing:.06em;
+  }
+  .chooser button:last-child{ border-right:0 }
+  .chooser button[aria-pressed="true"]{
+    background:var(--ink); color:var(--cream);
+  }
+  .chooser button:hover:not([aria-pressed="true"]){ color:var(--ink) }
+  .chooser.text button{ width:auto; padding:0 12px; font-size:11px; text-transform:uppercase }
+  .chooser svg{ width:14px; height:14px }
+
+  .masthead-rule{
+    display:flex; align-items:center; gap:14px;
+    padding:8px 0 0;
+    color:var(--ink-3);
+    font-size:11px;
+    letter-spacing:.16em;
+    text-transform:uppercase;
+  }
+  .masthead-rule .dot{ width:4px; height:4px; background:var(--brass); border-radius:50% }
+  .masthead-rule .live{ margin-left:auto; color:var(--brass-deep); font-weight:700 }
+  [data-theme="dark"] .masthead-rule .live{ color:var(--brass-2) }
+
+  /* ───── Section heading ───── */
+  .section-head{
+    display:flex; align-items:flex-end; justify-content:space-between;
+    border-bottom:1px solid var(--rule);
+    padding-bottom:10px;
+    margin:64px 0 28px;
+  }
+  .section-head h2{
+    font-size:34px;
+    font-variation-settings:"opsz" 144, "SOFT" 60, "wght" 450;
+    line-height:1;
+  }
+  .section-head .index{
+    font-family:"JetBrains Mono", monospace;
+    font-size:11px;
+    letter-spacing:.2em;
+    color:var(--ink-3);
+    text-transform:uppercase;
+  }
+
+  /* ───── HERO ───── */
+  .hero{
+    margin-top:36px;
+    display:grid;
+    grid-template-columns: 1.4fr 1fr;
+    gap:0;
+    border:1px solid var(--rule);
+    background:var(--paper);
+    box-shadow:6px 6px 0 var(--moss);
+  }
+  [data-theme="dark"] .hero{ box-shadow:6px 6px 0 rgba(136,181,150,.35) }
+  @media (max-width:900px){ .hero{ grid-template-columns:1fr } }
+
+  .hero-left{
+    padding:36px 40px 32px;
+    border-right:1px solid var(--rule);
+    position:relative;
+  }
+  @media (max-width:900px){ .hero-left{ border-right:0; border-bottom:1px solid var(--rule) } }
+
+  .hero-eyebrow{ display:flex; align-items:center; gap:10px; margin-bottom:14px; flex-wrap:wrap }
+  .stamp{
+    display:inline-flex; align-items:center; gap:6px;
+    padding:5px 11px 4px;
+    border:1.5px dashed var(--burgundy);
+    color:var(--burgundy);
+    font-size:10.5px; font-weight:700; letter-spacing:.2em; text-transform:uppercase;
+    background:rgba(122,42,34,.06);
+  }
+  [data-theme="dark"] .stamp{ background:rgba(225,138,110,.10) }
+  .stamp::before{ content:""; width:6px; height:6px; background:var(--burgundy); border-radius:50%; animation:pulse 1.6s ease-in-out infinite }
+  @keyframes pulse{ 0%,100%{opacity:1; transform:scale(1)} 50%{opacity:.4; transform:scale(.8)} }
+  .stamp.brass{ border-color:var(--brass-deep); color:var(--brass-deep); background:rgba(184,137,62,.08) }
+  .stamp.brass::before{ background:var(--brass-deep); animation:none }
+  .stamp.moss{ border-color:var(--moss); color:var(--moss); background:rgba(30,58,42,.06) }
+  [data-theme="dark"] .stamp.moss{ background:rgba(136,181,150,.10) }
+  .stamp.moss::before{ background:var(--moss); animation:none }
+  .stamp.muted{ border-color:var(--ink-3); color:var(--ink-3); background:rgba(107,92,70,.06) }
+  [data-theme="dark"] .stamp.muted{ background:rgba(147,130,106,.10) }
+  .stamp.muted::before{ background:var(--ink-3); animation:none }
+
+  .hero-title{
+    font-family:"Fraunces", serif;
+    font-size:78px;
+    line-height:.92;
+    font-variation-settings:"opsz" 144, "SOFT" 40, "wght" 380;
+    letter-spacing:-.03em;
+    margin-bottom:8px;
+  }
+  .hero-title .yr{
+    color:var(--brass-deep);
+    font-style:italic;
+    font-variation-settings:"opsz" 144, "SOFT" 30, "wght" 320;
+  }
+  [data-theme="dark"] .hero-title .yr{ color:var(--brass-2) }
+  @media (max-width:720px){ .hero-title{ font-size:54px } }
+  .hero-sub{
+    color:var(--ink-2);
+    font-size:15px;
+    max-width:46ch;
+    margin-bottom:28px;
+  }
+  .hero-facts{
+    display:grid;
+    grid-template-columns:repeat(3, 1fr);
+    border-top:1px solid var(--rule);
+    border-bottom:1px solid var(--rule);
+    margin-bottom:24px;
+  }
+  .hero-fact{ padding:14px 0; border-right:1px solid var(--rule-soft) }
+  .hero-fact:last-child{ border-right:0 }
+  .hero-fact .label{ font-size:10px; letter-spacing:.2em; text-transform:uppercase; color:var(--ink-3); margin-bottom:4px }
+  .hero-fact .value{
+    font-family:"Fraunces", serif;
+    font-size:22px;
+    font-variation-settings:"opsz" 144, "SOFT" 50, "wght" 450;
+    color:var(--ink);
+  }
+  .hero-cta{ display:flex; gap:10px; flex-wrap:wrap }
+
+  /* Buttons */
+  .btn{
+    appearance:none; border:1.5px solid var(--rule); background:var(--paper);
+    padding:11px 18px;
+    font-family:"Geist", sans-serif; font-weight:600; font-size:13px;
+    letter-spacing:.04em;
+    color:var(--ink);
+    cursor:pointer;
+    box-shadow:3px 3px 0 var(--shadow-hard);
+  }
+  .btn:hover{ transform:translate(-1px,-1px); box-shadow:4px 4px 0 var(--shadow-hard) }
+  .btn:active{ transform:translate(2px,2px); box-shadow:1px 1px 0 var(--shadow-hard) }
+  .btn.primary{ background:var(--moss); color:#F2EAD6; border-color:var(--moss) }
+  .btn.primary:hover{ background:var(--moss-2); color:var(--ink) }
+  [data-theme="dark"] .btn.primary{ color:var(--cream) }
+  [data-theme="dark"] .btn.primary:hover{ color:var(--cream-deep) }
+  .btn.brass{ background:var(--brass); color:#1B1610; border-color:var(--brass-deep) }
+  .btn.ghost{ box-shadow:none; background:transparent }
+  .btn .arrow{ display:inline-block; margin-left:6px }
+  .btn:hover .arrow{ transform:translateX(3px) }
+
+  /* Right column */
+  .hero-right{
+    padding:36px 36px;
+    background:linear-gradient(135deg, rgba(184,137,62,.06), transparent 70%), var(--paper);
+    display:flex; flex-direction:column; justify-content:space-between; gap:20px;
+  }
+  [data-theme="dark"] .hero-right{
+    background:linear-gradient(135deg, rgba(212,165,95,.10), transparent 70%), var(--paper);
+  }
+  .countdown{ text-align:center; padding:14px 0 10px }
+  .countdown .smallcaps{ display:block; margin-bottom:6px }
+  .countdown .num{
+    font-size:128px;
+    line-height:.85;
+    font-variation-settings:"opsz" 144, "SOFT" 25, "wght" 320;
+    color:var(--moss);
+    display:block;
+  }
+  [data-theme="dark"] .countdown .num{ color:var(--moss-2) }
+  .countdown .unit{
+    font-family:"Fraunces", serif;
+    font-style:italic;
+    font-size:18px;
+    color:var(--ink-3);
+    font-variation-settings:"opsz" 144, "SOFT" 30, "wght" 350;
+  }
+
+  .host-card{
+    border:1px solid var(--rule);
+    padding:14px 16px;
+    display:flex; align-items:center; gap:14px;
+    background:var(--cream-deep);
+  }
+  .crest{
+    flex:0 0 56px; height:56px; border-radius:50%;
+    background:radial-gradient(circle at 35% 30%, var(--brass-2) 0%, var(--brass) 60%, var(--brass-deep) 100%);
+    border:2px solid var(--moss);
+    display:flex; align-items:center; justify-content:center;
+    color:var(--moss); font-family:"Fraunces", serif; font-size:22px;
+    font-variation-settings:"opsz" 144, "SOFT" 0, "wght" 700;
+    box-shadow:inset 0 -3px 6px rgba(0,0,0,.15);
+  }
+  [data-theme="dark"] .crest{ border-color:var(--moss-2); color:var(--cream-deep) }
+  .host-card .smallcaps{ display:block; margin-bottom:2px }
+  .host-card .name{ font-family:"Fraunces", serif; font-size:18px; font-variation-settings:"opsz" 144, "SOFT" 60, "wght" 460 }
+
+  /* ───── Phase ledger (HOST view only) ───── */
+  .phases{
+    margin-top:32px;
+    background:var(--paper);
+    border:1px solid var(--rule);
+    padding:34px 32px 28px;
+    position:relative;
+  }
+  [data-view="participant"] .phases{ display:none }
+  .phases::before{
+    content:"PHASE LEDGER · HOST CONTROLS";
+    position:absolute;
+    top:-9px; left:24px;
+    background:var(--cream);
+    padding:0 10px;
+    font-size:10px; letter-spacing:.3em; color:var(--ink-3); font-weight:700;
+  }
+  .phase-track{
+    display:grid;
+    grid-template-columns:repeat(9, 1fr);
+    gap:0;
+    align-items:start;
+    margin-top:8px;
+  }
+  @media (max-width:1100px){ .phase-track{ grid-template-columns:repeat(3, 1fr); gap:14px } }
+  .ph{
+    text-align:center;
+    padding:0 4px;
+    position:relative;
+    cursor:pointer;
+  }
+  .ph .dot{
+    width:18px; height:18px;
+    margin:0 auto 8px;
+    background:var(--cream-deep);
+    border:1.5px solid var(--rule);
+    border-radius:50%;
+    position:relative; z-index:2;
+  }
+  .ph.done .dot{ background:var(--moss); border-color:var(--moss) }
+  .ph.now .dot{
+    background:var(--burgundy);
+    border-color:var(--burgundy);
+    box-shadow:0 0 0 4px rgba(122,42,34,.18);
+    animation:pulse 1.8s ease-in-out infinite;
+  }
+  [data-theme="dark"] .ph.now .dot{ box-shadow:0 0 0 4px rgba(225,138,110,.20) }
+  .ph::before{
+    content:"";
+    position:absolute;
+    top:8px; left:-50%; right:50%;
+    height:1.5px;
+    background:var(--rule-soft);
+    z-index:1;
+  }
+  .ph:first-child::before{ display:none }
+  .ph.done::before{ background:var(--moss) }
+  .ph.now::before{ background:linear-gradient(to right, var(--moss) 60%, var(--burgundy)) }
+  @media (max-width:1100px){ .ph::before{ display:none } }
+  .ph .label{
+    font-size:11.5px;
+    letter-spacing:.05em;
+    color:var(--ink-3);
+    line-height:1.3;
+    font-weight:500;
+  }
+  .ph.done .label{ color:var(--ink-2) }
+  .ph.now .label{ color:var(--burgundy); font-weight:700 }
+  [data-theme="dark"] .ph.now .label{ color:var(--burgundy) }
+
+  .phase-host-bar{
+    margin-top:22px; padding-top:18px;
+    border-top:1px solid var(--rule-soft);
+    display:flex; justify-content:space-between; align-items:center;
+    gap:18px; flex-wrap:wrap;
+  }
+  .phase-host-bar .what{
+    font-family:"Fraunces", serif;
+    font-size:18px;
+    font-variation-settings:"opsz" 144, "SOFT" 50, "wght" 450;
+  }
+  .phase-host-bar .what em{
+    font-style:italic; color:var(--burgundy);
+    font-variation-settings:"opsz" 144, "SOFT" 30, "wght" 380;
+  }
+  .phase-host-bar .meta{ color:var(--ink-3); font-size:12.5px; margin-top:2px }
+  .phase-host-bar .actions{ display:flex; gap:10px; flex-wrap:wrap }
+
+  /* ───── Participant call-to-action (PARTICIPANT view only) ───── */
+  .turn{
+    display:none;
+    margin-top:32px;
+    background:var(--paper);
+    border:1px solid var(--rule);
+    padding:30px 36px;
+    align-items:center;
+    justify-content:space-between;
+    gap:24px;
+    flex-wrap:wrap;
+    position:relative;
+    overflow:hidden;
+  }
+  [data-view="participant"] .turn{ display:flex }
+  .turn::after{
+    content:"";
+    position:absolute; right:-40px; top:-40px;
+    width:180px; height:180px;
+    background:radial-gradient(circle, var(--brass-2), transparent 70%);
+    opacity:.18;
+    pointer-events:none;
+  }
+  [data-theme="dark"] .turn::after{ opacity:.10 }
+  .turn .copy{ flex:1 1 360px; min-width:0 }
+  .turn .stamp{ margin-bottom:10px }
+  .turn h2{
+    font-size:30px;
+    font-variation-settings:"opsz" 144, "SOFT" 50, "wght" 440;
+    line-height:1.05;
+    margin-bottom:8px;
+  }
+  .turn h2 em{
+    font-style:italic; color:var(--burgundy);
+    font-variation-settings:"opsz" 144, "SOFT" 30, "wght" 380;
+  }
+  .turn p{ color:var(--ink-2); font-size:14.5px; max-width:48ch }
+  .turn .cta{ display:flex; gap:10px; flex-wrap:wrap; align-items:center }
+  .turn .progress{
+    font-family:"Fraunces", serif;
+    font-style:italic;
+    font-size:14px;
+    color:var(--ink-3);
+    font-variation-settings:"opsz" 144, "SOFT" 30, "wght" 380;
+  }
+
+  /* ───── Today panel ───── */
+  .today-grid{
+    display:grid;
+    grid-template-columns: 1.6fr 1fr;
+    gap:24px;
+  }
+  @media (max-width:1000px){ .today-grid{ grid-template-columns:1fr } }
+  .blocks{
+    background:var(--paper);
+    border:1px solid var(--rule);
+  }
+  .block{
+    padding:18px 22px;
+    border-bottom:1px solid var(--rule-soft);
+    display:grid;
+    grid-template-columns: 80px 1fr auto;
+    gap:18px;
+    align-items:center;
+    position:relative;
+  }
+  .block:last-child{ border-bottom:0 }
+  .block:hover{ background:var(--cream-deep) }
+  .block .time{
+    font-family:"Fraunces", serif;
+    font-style:italic;
+    font-variation-settings:"opsz" 144, "SOFT" 25, "wght" 400;
+    font-size:22px;
+    color:var(--ink-2);
+  }
+  .block .body .name{
+    font-family:"Fraunces", serif;
+    font-size:17px;
+    font-variation-settings:"opsz" 144, "SOFT" 40, "wght" 480;
+  }
+  .block .body .where{ color:var(--ink-3); font-size:12.5px; margin-top:2px }
+  .block .kind{
+    font-size:9.5px; letter-spacing:.18em; text-transform:uppercase; font-weight:700;
+    padding:4px 8px;
+    border:1px solid var(--rule-soft);
+  }
+  .kind.group{ color:var(--moss); border-color:var(--moss); background:rgba(30,58,42,.06) }
+  [data-theme="dark"] .kind.group{ background:rgba(136,181,150,.10) }
+  .kind.meal{ color:var(--brass-deep); border-color:var(--brass-deep); background:rgba(184,137,62,.07) }
+  [data-theme="dark"] .kind.meal{ color:var(--brass-2); border-color:var(--brass-2); background:rgba(212,165,95,.10) }
+  .kind.optional{ color:var(--ink-3) }
+  .block.now{
+    background:rgba(122,42,34,.06);
+    border-left:4px solid var(--burgundy);
+    padding-left:18px;
+  }
+  [data-theme="dark"] .block.now{ background:rgba(225,138,110,.08) }
+  .block.now .time{ color:var(--burgundy) }
+  .block.next{ background:rgba(184,137,62,.05) }
+  [data-theme="dark"] .block.next{ background:rgba(212,165,95,.06) }
+
+  /* Side panel: rotation */
+  .rotation{
+    background:var(--paper);
+    border:1px solid var(--rule);
+    padding:24px 22px;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    text-align:center;
+    position:relative;
+  }
+  .wheel{ width:240px; height:240px; position:relative; margin:8px auto 18px }
+  .wheel svg{ width:100%; height:100%; display:block }
+  .wheel-center{
+    position:absolute; inset:38%; border-radius:50%;
+    background:var(--cream-deep);
+    border:1.5px solid var(--rule);
+    display:flex; align-items:center; justify-content:center;
+    font-family:"Fraunces", serif;
+    font-style:italic;
+    font-variation-settings:"opsz" 144, "SOFT" 30, "wght" 360;
+    font-size:13px;
+    color:var(--ink-2);
+    line-height:1.1;
+    text-align:center;
+    padding:6px;
+  }
+  .rotation-list{ width:100%; margin-top:6px; border-top:1px solid var(--rule-soft); padding-top:14px }
+  .rotation-list .row{
+    display:flex; justify-content:space-between; padding:5px 0;
+    font-size:12.5px;
+    border-bottom:1px dotted var(--rule-soft);
+  }
+  .rotation-list .row:last-child{ border-bottom:0 }
+  .rotation-list .yr{ font-family:"Fraunces", serif; font-style:italic; color:var(--ink-3) }
+  .rotation-list .row.next{ color:var(--burgundy); font-weight:600 }
+
+  /* ───── Reunion ledger ───── */
+  .ledger{
+    display:grid;
+    grid-template-columns:repeat(3, 1fr);
+    gap:0;
+    border:1px solid var(--rule);
+    background:var(--paper);
+  }
+  @media (max-width:1000px){ .ledger{ grid-template-columns:1fr 1fr } }
+  @media (max-width:720px){ .ledger{ grid-template-columns:1fr } }
+
+  .entry{
+    padding:28px 26px 24px;
+    border-right:1px solid var(--rule-soft);
+    border-bottom:1px solid var(--rule-soft);
+    position:relative;
+    cursor:pointer;
+  }
+  .entry:hover{ background:var(--cream-deep) }
+  .entry:nth-child(3n){ border-right:0 }
+  .entry-header{ display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:10px }
+  .entry-year{
+    font-family:"Fraunces", serif;
+    font-style:italic;
+    font-variation-settings:"opsz" 144, "SOFT" 25, "wght" 360;
+    font-size:48px;
+    line-height:.85;
+    color:var(--moss);
+  }
+  [data-theme="dark"] .entry-year{ color:var(--moss-2) }
+  .entry-year.future{ color:var(--brass-deep) }
+  [data-theme="dark"] .entry-year.future{ color:var(--brass-2) }
+  .entry-year.archived{ color:var(--ink-3) }
+  .entry-no{
+    font-family:"JetBrains Mono", monospace;
+    font-size:10px;
+    letter-spacing:.18em;
+    color:var(--ink-3);
+    text-align:right;
+  }
+  .entry-title{
+    font-family:"Fraunces", serif;
+    font-size:20px;
+    font-variation-settings:"opsz" 144, "SOFT" 50, "wght" 460;
+    line-height:1.2;
+    margin:6px 0 4px;
+  }
+  .entry-meta{ color:var(--ink-3); font-size:13px; margin-bottom:14px }
+  .entry-foot{
+    display:flex; justify-content:space-between; align-items:center;
+    padding-top:12px;
+    border-top:1px dashed var(--rule-soft);
+    font-size:12px;
+  }
+  .avatars{ display:flex }
+  .av{
+    width:24px; height:24px; border-radius:50%;
+    background:var(--brass-2);
+    border:2px solid var(--paper);
+    margin-left:-6px;
+    display:inline-flex; align-items:center; justify-content:center;
+    font-family:"Fraunces", serif; font-size:10px; font-weight:700; color:var(--moss);
+  }
+  .av:first-child{ margin-left:0 }
+  .av.b{ background:var(--moss-mute); color:#F2EAD6 }
+  .av.c{ background:var(--burgundy-soft); color:#F2EAD6 }
+  .av.d{ background:var(--linen) }
+  .av.more{ background:var(--cream-deep); color:var(--ink-2); font-size:9px }
+
+  .entry.featured .entry-title::first-letter{
+    font-family:"Fraunces", serif;
+    font-style:italic;
+    font-variation-settings:"opsz" 144, "SOFT" 25, "wght" 350;
+    float:left;
+    font-size:48px;
+    line-height:.85;
+    padding:6px 8px 0 0;
+    color:var(--brass-deep);
+  }
+  [data-theme="dark"] .entry.featured .entry-title::first-letter{ color:var(--brass-2) }
+
+  /* ───── Components ───── */
+  .components{
+    display:grid;
+    grid-template-columns:repeat(2, 1fr);
+    gap:24px;
+  }
+  @media (max-width:900px){ .components{ grid-template-columns:1fr } }
+  .panel{
+    background:var(--paper);
+    border:1px solid var(--rule);
+    padding:24px 26px;
+  }
+  .panel h3{
+    font-size:20px;
+    font-variation-settings:"opsz" 144, "SOFT" 60, "wght" 460;
+    margin-bottom:6px;
+  }
+  .panel .smallcaps{ display:block; margin-bottom:18px }
+
+  .loc{
+    border:1px solid var(--rule-soft);
+    padding:16px;
+    background:var(--cream);
+    margin-bottom:14px;
+  }
+  .loc-head{ display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:10px }
+  .loc-name{ font-family:"Fraunces", serif; font-size:18px; font-variation-settings:"opsz" 144, "SOFT" 50, "wght" 470 }
+  .loc-meta{ color:var(--ink-3); font-size:12px; margin-top:2px }
+  .loc-score{
+    font-family:"Fraunces", serif;
+    font-style:italic;
+    font-size:30px;
+    color:var(--moss);
+    line-height:1;
+    font-variation-settings:"opsz" 144, "SOFT" 25, "wght" 380;
+  }
+  [data-theme="dark"] .loc-score{ color:var(--moss-2) }
+  .loc-score .of{ font-size:14px; color:var(--ink-3) }
+  .vote-pips{ display:flex; gap:6px; margin-top:8px }
+  .pip{
+    width:22px; height:22px;
+    border:1.5px solid var(--rule);
+    background:var(--paper);
+    cursor:pointer;
+    position:relative;
+  }
+  .pip:hover{ background:var(--brass-2) }
+  .pip.on{ background:var(--brass); border-color:var(--brass-deep) }
+  .pip.on::after{
+    content:"★";
+    position:absolute; inset:0;
+    display:flex; align-items:center; justify-content:center;
+    color:var(--moss); font-size:12px;
+  }
+  [data-theme="dark"] .pip.on::after{ color:var(--cream-deep) }
+
+  .heatmap{
+    display:grid; grid-template-columns:repeat(7, 1fr); gap:3px;
+    margin-top:14px;
+  }
+  .hm{
+    aspect-ratio:1;
+    border:1px solid var(--rule-hair);
+    display:flex; align-items:center; justify-content:center;
+    font-family:"JetBrains Mono", monospace; font-size:9px;
+    color:var(--ink-3);
+  }
+  .hm.l1{ background:rgba(30,58,42,.10); color:var(--ink-2) }
+  .hm.l2{ background:rgba(30,58,42,.25); color:var(--ink-2) }
+  .hm.l3{ background:rgba(30,58,42,.50); color:#F2EAD6 }
+  .hm.l4{ background:rgba(30,58,42,.78); color:#F2EAD6 }
+  .hm.l5{ background:var(--moss); color:#F2EAD6 }
+  [data-theme="dark"] .hm.l1{ background:rgba(136,181,150,.10) }
+  [data-theme="dark"] .hm.l2{ background:rgba(136,181,150,.22) }
+  [data-theme="dark"] .hm.l3{ background:rgba(136,181,150,.40); color:var(--cream-deep) }
+  [data-theme="dark"] .hm.l4{ background:rgba(136,181,150,.65); color:var(--cream-deep) }
+  [data-theme="dark"] .hm.l5{ background:var(--moss); color:var(--cream-deep) }
+  .hm.weekend{ outline:1px dashed var(--brass) }
+  .hm-legend{ display:flex; gap:6px; margin-top:10px; align-items:center; font-size:10px; color:var(--ink-3); letter-spacing:.1em; text-transform:uppercase }
+  .hm-legend .scale{ display:flex; gap:2px }
+  .hm-legend .sw{ width:14px; height:10px; border:1px solid var(--rule-hair) }
+  .hm-legend .sw.l1{ background:rgba(30,58,42,.10) }
+  .hm-legend .sw.l2{ background:rgba(30,58,42,.25) }
+  .hm-legend .sw.l3{ background:rgba(30,58,42,.50) }
+  .hm-legend .sw.l4{ background:rgba(30,58,42,.78) }
+  .hm-legend .sw.l5{ background:var(--moss) }
+  [data-theme="dark"] .hm-legend .sw.l1{ background:rgba(136,181,150,.10) }
+  [data-theme="dark"] .hm-legend .sw.l2{ background:rgba(136,181,150,.22) }
+  [data-theme="dark"] .hm-legend .sw.l3{ background:rgba(136,181,150,.40) }
+  [data-theme="dark"] .hm-legend .sw.l4{ background:rgba(136,181,150,.65) }
+  [data-theme="dark"] .hm-legend .sw.l5{ background:var(--moss) }
+
+  .swatches{ display:grid; grid-template-columns:repeat(2,1fr); gap:10px; margin-top:14px }
+  .sw-row{
+    display:flex; align-items:center; gap:12px;
+    padding:10px 14px;
+    background:var(--cream);
+    border-left:4px solid var(--moss);
+    border-top:1px solid var(--rule-hair);
+    border-right:1px solid var(--rule-hair);
+    border-bottom:1px solid var(--rule-hair);
+    font-size:13px;
+  }
+  .sw-row.meal{ border-left-color:var(--brass-deep) }
+  .sw-row.opt{ border-left-color:var(--moss-mute) }
+  .sw-row.travel{ border-left-color:var(--burgundy) }
+
+  /* Host-only / participant-only helpers */
+  .host-only, .participant-only{ display:none }
+  [data-view="host"] .host-only{ display:initial }
+  [data-view="participant"] .participant-only{ display:initial }
+  /* Block-level overrides */
+  [data-view="host"] .host-only.block{ display:flex }
+
+  /* Footer */
+  footer.colophon{
+    margin-top:80px;
+    border-top:2px solid var(--rule);
+    padding:28px 0 60px;
+    font-size:12px;
+    color:var(--ink-3);
+    display:flex; justify-content:space-between; flex-wrap:wrap; gap:14px;
+  }
+  footer .mark{
+    font-family:"Fraunces", serif;
+    font-style:italic;
+    font-size:14px;
+    color:var(--ink-2);
+    font-variation-settings:"opsz" 144, "SOFT" 25, "wght" 400;
+  }
+
+  @keyframes reveal{ from{opacity:0; transform:translateY(14px)} to{opacity:1; transform:translateY(0)} }
+  .reveal{ animation:reveal .7s cubic-bezier(.2,.8,.25,1) both }
+  .reveal:nth-child(2){ animation-delay:.05s }
+  .reveal:nth-child(3){ animation-delay:.10s }
+  .reveal:nth-child(4){ animation-delay:.15s }
+  .reveal:nth-child(5){ animation-delay:.20s }
+  .reveal:nth-child(6){ animation-delay:.25s }
+</style>
+</head>
+<body>
+
+<header class="masthead">
+  <div class="frame">
+    <div class="masthead-row">
+
+      <div class="masthead-meta">
+        <span class="smallcaps">Established · 2019</span>
+        <span class="date">Vol. VII · Friday, the First of May, MMXXVI</span>
+      </div>
+
+      <div class="wordmark">Clan Plan</div>
+
+      <div class="masthead-actions">
+
+        <!-- View chooser: Host vs Participant -->
+        <div class="chooser text" role="group" aria-label="Demo view">
+          <button id="view-host" data-view="host" aria-pressed="false" title="The host's controls">Host</button>
+          <button id="view-part" data-view="participant" aria-pressed="false" title="What a regular family member sees">Member</button>
+        </div>
+
+        <!-- Theme chooser: light · system · dark -->
+        <div class="chooser" role="group" aria-label="Theme">
+          <button id="th-light"  data-theme="light"  aria-pressed="false" title="Light">
+            <svg fill="none" stroke="currentColor" stroke-width="1.6" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.5"/><path stroke-linecap="round" d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5 5l1.4 1.4M17.6 17.6L19 19M5 19l1.4-1.4M17.6 6.4L19 5"/></svg>
+          </button>
+          <button id="th-system" data-theme="system" aria-pressed="false" title="Match system">
+            <svg fill="none" stroke="currentColor" stroke-width="1.6" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="13" rx="1.5"/><path stroke-linecap="round" d="M8 20.5h8M12 17.5v3"/></svg>
+          </button>
+          <button id="th-dark"   data-theme="dark"   aria-pressed="false" title="Dark">
+            <svg fill="none" stroke="currentColor" stroke-width="1.6" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 12.8A8.5 8.5 0 1 1 11.2 3a6.7 6.7 0 0 0 9.8 9.8z"/></svg>
+          </button>
+        </div>
+
+        <button class="ico-btn" title="Account">
+          <svg fill="none" stroke="currentColor" stroke-width="1.6" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.5 20.118a7.5 7.5 0 0114.998 0A18 18 0 0112 21.75c-2.676 0-5.216-.584-7.5-1.632z"/></svg>
+        </button>
+      </div>
+
+    </div>
+    <div class="masthead-rule">
+      <span>The Rotunda</span><span class="dot"></span>
+      <span>Reunions</span><span class="dot"></span>
+      <span>Activity Ideas</span><span class="dot"></span>
+      <span class="host-only" style="display:none"><span class="dot" style="vertical-align:middle"></span> The Ledger</span>
+      <span>Family Album</span>
+      <span class="live host-only">3 phase actions await</span>
+      <span class="live participant-only">Reunion 2026 begins in 4 days</span>
+    </div>
+  </div>
+</header>
+
+<main class="frame">
+
+  <!-- ───── HERO ───── -->
+  <section class="hero reveal">
+    <div class="hero-left">
+      <div class="hero-eyebrow">
+        <span class="stamp">Active</span>
+        <span class="mono" style="color:var(--ink-3)">/r/highlands-2026</span>
+      </div>
+      <h1 class="hero-title">The Highlands<br>Gathering<span class="yr"> ’26</span></h1>
+      <p class="hero-sub">Three days at Loch Glenhurst with thirty-two cousins, four generations, and one disputed scone recipe. Hosted by the MacAllister branch.</p>
+
+      <div class="hero-facts">
+        <div class="hero-fact">
+          <div class="label">Dates</div>
+          <div class="value">May 8 – 10</div>
+        </div>
+        <div class="hero-fact">
+          <div class="label">Where</div>
+          <div class="value">Loch Glenhurst</div>
+        </div>
+        <div class="hero-fact">
+          <div class="label">Mustering</div>
+          <div class="value">32 of 41</div>
+        </div>
+      </div>
+
+      <div class="hero-cta">
+        <a class="btn primary" href="#today">Today's roll-call <span class="arrow">→</span></a>
+        <a class="btn" href="#">Open the schedule</a>
+        <a class="btn ghost host-only" href="#">Manage reunion</a>
+      </div>
+    </div>
+
+    <div class="hero-right">
+      <div class="countdown">
+        <span class="smallcaps">Days until kindling</span>
+        <span class="num">04</span>
+        <span class="unit">days, three hours, and change</span>
+      </div>
+      <div class="host-card">
+        <div class="crest">M</div>
+        <div>
+          <span class="smallcaps">This year's hosts</span>
+          <div class="name">The MacAllister Branch</div>
+          <div style="font-size:12px; color:var(--ink-3); margin-top:1px">Eilidh, Hamish &amp; Cousin Rory</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ───── HOST: full Phase Ledger ───── -->
+  <section class="phases reveal">
+    <div class="phase-track">
+      <div class="ph done"><div class="dot"></div><div class="label">Draft</div></div>
+      <div class="ph done"><div class="dot"></div><div class="label">Availability</div></div>
+      <div class="ph done"><div class="dot"></div><div class="label">Date Set</div></div>
+      <div class="ph done"><div class="dot"></div><div class="label">Locations</div></div>
+      <div class="ph done"><div class="dot"></div><div class="label">Location Chosen</div></div>
+      <div class="ph done"><div class="dot"></div><div class="label">Schedule Built</div></div>
+      <div class="ph now"><div class="dot"></div><div class="label">Active</div></div>
+      <div class="ph"><div class="dot"></div><div class="label">Reflection</div></div>
+      <div class="ph"><div class="dot"></div><div class="label">Archived</div></div>
+    </div>
+
+    <div class="phase-host-bar">
+      <div>
+        <div class="what">The reunion is <em>under way</em>.</div>
+        <div class="meta">Advance to <strong>Reflection</strong> when everyone's home and you'd like the survey opened.</div>
+      </div>
+      <div class="actions">
+        <button class="btn ghost" type="button">← Schedule</button>
+        <button class="btn primary" type="button">Advance to Reflection <span class="arrow">→</span></button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ───── PARTICIPANT: only "your turn" call-to-action ───── -->
+  <section class="turn reveal">
+    <div class="copy">
+      <span class="stamp">Happening now</span>
+      <h2>The Highlands Gathering is <em>under way</em>.</h2>
+      <p>Today's roll-call has the photo at the standing stones at eleven and the long-table dinner at seven. Bring a tartan-adjacent something.</p>
+    </div>
+    <div class="cta">
+      <a class="btn primary" href="#today">Today's roll-call <span class="arrow">→</span></a>
+      <span class="progress">— see you at the lodge —</span>
+    </div>
+  </section>
+
+  <!-- ───── TODAY ───── -->
+  <div class="section-head" id="today">
+    <h2>Today, 1<span class="display-italic" style="font-size:.7em;color:var(--brass-deep)">st</span> May.</h2>
+    <span class="index">Live · refreshes every 30 s</span>
+  </div>
+
+  <div class="today-grid reveal">
+
+    <div class="blocks">
+      <div class="block">
+        <div class="time">7:30 a.m.</div>
+        <div class="body">
+          <div class="name">Sunrise stretch on the loch</div>
+          <div class="where">By the boathouse · Aunt Morag is leading</div>
+        </div>
+        <span class="kind optional">Optional</span>
+      </div>
+      <div class="block">
+        <div class="time">9:00 a.m.</div>
+        <div class="body">
+          <div class="name">Breakfast — porridge &amp; the salmon thing</div>
+          <div class="where">Lodge dining hall · 32 expected</div>
+        </div>
+        <span class="kind meal">Meal</span>
+      </div>
+
+      <div class="block now">
+        <div class="time">11:00 a.m.</div>
+        <div class="body">
+          <div class="name">Group portrait at the standing stones</div>
+          <div class="where">Wear something tartan-adjacent · Ronan&nbsp;photographing</div>
+          <div style="margin-top:8px; font-size:11px; color:var(--burgundy); letter-spacing:.18em; text-transform:uppercase; font-weight:700">— Happening now</div>
+        </div>
+        <span class="kind group">Group</span>
+      </div>
+
+      <div class="block next">
+        <div class="time">1:30 p.m.</div>
+        <div class="body">
+          <div class="name">Loch hike or library nap (your call)</div>
+          <div class="where">Two paths, one nap — see the schedule</div>
+        </div>
+        <span class="kind optional">Optional</span>
+      </div>
+      <div class="block">
+        <div class="time">7:00 p.m.</div>
+        <div class="body">
+          <div class="name">The Long Table dinner</div>
+          <div class="where">Great hall · everyone · ceilidh follows</div>
+        </div>
+        <span class="kind meal">Meal</span>
+      </div>
+    </div>
+
+    <aside class="rotation">
+      <span class="smallcaps">Host Rotation</span>
+      <h3 style="margin-top:6px; margin-bottom:4px">The Wheel</h3>
+      <div class="wheel">
+        <svg viewBox="0 0 200 200">
+          <defs><filter id="paper-shadow"><feDropShadow dx="0" dy="2" stdDeviation="2" flood-opacity=".15"/></filter></defs>
+          <g transform="translate(100,100)" filter="url(#paper-shadow)">
+            <path d="M 0 0 L 90 0 A 90 90 0 0 1 56.06 70.31 Z" fill="#2A5239" opacity=".85"/>
+            <path d="M 0 0 L 56.06 70.31 A 90 90 0 0 1 -20.04 87.74 Z" fill="#1E3A2A" opacity=".95"/>
+            <path d="M 0 0 L -20.04 87.74 A 90 90 0 0 1 -81.12 38.94 Z" fill="#2A5239" opacity=".7"/>
+            <path d="M 0 0 L -81.12 38.94 A 90 90 0 0 1 -81.12 -38.94 Z" fill="#1E3A2A" opacity=".55"/>
+            <path d="M 0 0 L -81.12 -38.94 A 90 90 0 0 1 -20.04 -87.74 Z" fill="#2A5239" opacity=".4"/>
+            <path d="M 0 0 L -20.04 -87.74 A 90 90 0 0 1 56.06 -70.31 Z" fill="#B8893E"/>
+            <path d="M 0 0 L 56.06 -70.31 A 90 90 0 0 1 90 0 Z" fill="#7A2A22" opacity=".22" stroke="#7A2A22" stroke-width="1.5" stroke-dasharray="3 2"/>
+          </g>
+          <g font-family="Fraunces" font-style="italic" font-size="9" fill="currentColor">
+            <text x="100" y="32" text-anchor="middle">MacAllister</text>
+            <text x="166" y="60" text-anchor="middle">Next</text>
+            <text x="166" y="72" text-anchor="middle" font-size="7" fill="#7A2A22">DUNBAR ’28</text>
+          </g>
+        </svg>
+        <div class="wheel-center">seven<br><span style="font-size:10px; color:var(--ink-3)">gatherings</span></div>
+      </div>
+      <div class="rotation-list">
+        <div class="row"><span>2019 · Glenfinnan</span><span class="yr">Cameron</span></div>
+        <div class="row"><span>2020 · cancelled</span><span class="yr">—</span></div>
+        <div class="row"><span>2021 · Pitlochry</span><span class="yr">Buchanan</span></div>
+        <div class="row"><span>2022 · Stornoway</span><span class="yr">Forbes</span></div>
+        <div class="row"><span>2024 · Skye</span><span class="yr">Murray</span></div>
+        <div class="row" style="font-weight:700; color:var(--brass-deep)"><span>2026 · Glenhurst</span><span class="yr">MacAllister</span></div>
+        <div class="row next"><span>2028 · ?</span><span class="yr">Dunbar &nbsp;✦</span></div>
+      </div>
+    </aside>
+
+  </div>
+
+  <!-- ───── REUNION LEDGER ───── -->
+  <div class="section-head">
+    <h2>The Reunion Ledger</h2>
+    <span class="index">Seven gatherings recorded</span>
+  </div>
+
+  <section class="ledger reveal">
+
+    <article class="entry featured">
+      <div class="entry-header">
+        <span class="entry-year">2026</span>
+        <span class="entry-no host-only">Active · attention required</span>
+        <span class="entry-no participant-only">Active</span>
+      </div>
+      <div class="hero-eyebrow" style="margin-bottom:6px">
+        <span class="stamp" style="font-size:9px">Active</span>
+      </div>
+      <h3 class="entry-title">The Highlands Gathering at Loch Glenhurst</h3>
+      <p class="entry-meta">May 8–10 · MacAllister hosting · 32 mustered</p>
+      <div class="entry-foot">
+        <div class="avatars">
+          <div class="av">EM</div>
+          <div class="av b">HM</div>
+          <div class="av c">RM</div>
+          <div class="av d">JF</div>
+          <div class="av more">+28</div>
+        </div>
+        <span class="mono">/r/highlands-2026</span>
+      </div>
+    </article>
+
+    <article class="entry">
+      <div class="entry-header">
+        <span class="entry-year future">2028</span>
+        <span class="entry-no host-only">Drafting · 23 of 41 awaiting</span>
+        <span class="entry-no participant-only">Your dates needed</span>
+      </div>
+      <div class="hero-eyebrow" style="margin-bottom:6px">
+        <span class="stamp brass" style="font-size:9px">Availability open</span>
+      </div>
+      <h3 class="entry-title">Border Country, Dunbar &amp; cousins</h3>
+      <p class="entry-meta participant-only">The Dunbar branch is hosting. Mark when you're free.</p>
+      <p class="entry-meta host-only">Dates pending · 18 of 41 responded</p>
+      <div class="entry-foot">
+        <div class="avatars">
+          <div class="av b">MD</div>
+          <div class="av">FD</div>
+          <div class="av c">PD</div>
+          <div class="av more">+15</div>
+        </div>
+        <span class="mono">/r/dunbar-2028</span>
+      </div>
+    </article>
+
+    <article class="entry">
+      <div class="entry-header">
+        <span class="entry-year archived">2024</span>
+        <span class="entry-no">47 photos · closed</span>
+      </div>
+      <div class="hero-eyebrow" style="margin-bottom:6px">
+        <span class="stamp muted" style="font-size:9px">Past · album</span>
+      </div>
+      <h3 class="entry-title">Skye, Murrays &amp; the great fog of June</h3>
+      <p class="entry-meta">June 14–16 · Murray hosting · 28 attended</p>
+      <div class="entry-foot">
+        <div class="avatars">
+          <div class="av b">CM</div>
+          <div class="av">AM</div>
+          <div class="av d">SM</div>
+          <div class="av more">+25</div>
+        </div>
+        <span class="mono">/r/skye-2024</span>
+      </div>
+    </article>
+
+  </section>
+
+  <!-- ───── COMPONENT SHOWCASE ───── -->
+  <div class="section-head">
+    <h2>Components, in <span class="display-italic">situ</span>.</h2>
+    <span class="index">Pattern excerpts</span>
+  </div>
+
+  <section class="components reveal">
+
+    <div class="panel">
+      <span class="smallcaps">Locations · vote opens to family</span>
+      <h3>Voting on candidates</h3>
+      <p style="color:var(--ink-3); font-size:13px; margin-bottom:14px">Five-pip blind ballot. The score reveals once the host closes voting.</p>
+
+      <div class="loc">
+        <div class="loc-head">
+          <div>
+            <div class="loc-name">Loch Glenhurst Lodge</div>
+            <div class="loc-meta">Scottish Highlands · sleeps 40 · £140 / night</div>
+          </div>
+          <div class="loc-score" style="text-align:right">4.6<span class="of"> / 5</span></div>
+        </div>
+        <div class="vote-pips">
+          <span class="pip on"></span>
+          <span class="pip on"></span>
+          <span class="pip on"></span>
+          <span class="pip on"></span>
+          <span class="pip"></span>
+        </div>
+      </div>
+      <div class="loc">
+        <div class="loc-head">
+          <div>
+            <div class="loc-name">Cape Breton, the old farmhouse</div>
+            <div class="loc-meta">Nova Scotia · sleeps 22 · CAD 90 / night</div>
+          </div>
+          <div class="loc-score" style="text-align:right; color:var(--brass-deep)">3.8<span class="of"> / 5</span></div>
+        </div>
+        <div class="vote-pips">
+          <span class="pip on"></span>
+          <span class="pip on"></span>
+          <span class="pip on"></span>
+          <span class="pip"></span>
+          <span class="pip"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <span class="smallcaps">Availability · while it's open</span>
+      <h3>When the family is free</h3>
+      <p style="color:var(--ink-3); font-size:13px">May 2026 · 41 polled · weekend dates ringed in brass.</p>
+      <div class="heatmap">
+        <div class="hm">M</div><div class="hm">T</div><div class="hm">W</div><div class="hm">T</div><div class="hm">F</div><div class="hm">S</div><div class="hm">S</div>
+        <div class="hm" style="visibility:hidden"></div><div class="hm" style="visibility:hidden"></div><div class="hm" style="visibility:hidden"></div><div class="hm" style="visibility:hidden"></div>
+        <div class="hm l1">1</div><div class="hm l1 weekend">2</div><div class="hm l2 weekend">3</div>
+        <div class="hm l1">4</div><div class="hm l2">5</div><div class="hm l3">6</div><div class="hm l3">7</div><div class="hm l4 weekend">8</div><div class="hm l5 weekend">9</div><div class="hm l5 weekend">10</div>
+        <div class="hm l3">11</div><div class="hm l3">12</div><div class="hm l4">13</div><div class="hm l4">14</div><div class="hm l5">15</div><div class="hm l5 weekend">16</div><div class="hm l4 weekend">17</div>
+        <div class="hm l2">18</div><div class="hm l2">19</div><div class="hm l3">20</div><div class="hm l2">21</div><div class="hm l3">22</div><div class="hm l3 weekend">23</div><div class="hm l2 weekend">24</div>
+        <div class="hm l1">25</div><div class="hm l1">26</div><div class="hm l2">27</div><div class="hm l1">28</div><div class="hm l2">29</div><div class="hm l1 weekend">30</div><div class="hm l1 weekend">31</div>
+      </div>
+      <div class="hm-legend">
+        <span>Fewer</span>
+        <div class="scale">
+          <div class="sw l1"></div><div class="sw l2"></div><div class="sw l3"></div><div class="sw l4"></div><div class="sw l5"></div>
+        </div>
+        <span>More</span>
+        <span style="margin-left:auto; color:var(--brass-deep); font-weight:700">Best · 8–10 May</span>
+      </div>
+    </div>
+
+    <div class="panel">
+      <span class="smallcaps">Schedule · the host's tools</span>
+      <h3>Block taxonomy</h3>
+      <p style="color:var(--ink-3); font-size:13px">Four kinds, distinguished by an inked margin. Implicit free time needs no entry.</p>
+      <div class="swatches">
+        <div class="sw-row"><span class="smallcaps">Group</span> <span style="margin-left:auto">Whole-clan, expected</span></div>
+        <div class="sw-row meal"><span class="smallcaps">Meal</span> <span style="margin-left:auto">Communal table</span></div>
+        <div class="sw-row opt"><span class="smallcaps">Optional</span> <span style="margin-left:auto">Drop-in, no muster</span></div>
+        <div class="sw-row travel"><span class="smallcaps">Travel</span> <span style="margin-left:auto">Bus / ferry / convoy</span></div>
+      </div>
+      <div style="margin-top:18px; display:flex; gap:8px; flex-wrap:wrap">
+        <button class="btn primary" type="button">Add block</button>
+        <button class="btn brass" type="button">Open signups</button>
+        <button class="btn" type="button">Promote idea →</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <span class="smallcaps">Activity ideas · always open</span>
+      <h3>The wishlist</h3>
+      <div style="margin-top:14px; display:flex; flex-direction:column; gap:0">
+        <div style="display:grid; grid-template-columns:auto 1fr auto; gap:14px; align-items:center; padding:11px 0; border-bottom:1px dotted var(--rule-soft)">
+          <span class="num" style="font-size:28px; color:var(--moss); width:42px; text-align:right">4.7</span>
+          <div>
+            <div style="font-family:'Fraunces',serif; font-size:15px; font-variation-settings:'opsz' 144,'SOFT' 60,'wght' 470">Whisky tasting with Uncle Hamish</div>
+            <div style="font-size:12px; color:var(--ink-3)">28 votes · 7 comments · proposed by Eilidh</div>
+          </div>
+          <span class="stamp moss" style="font-size:9px">Pinned</span>
+        </div>
+        <div style="display:grid; grid-template-columns:auto 1fr auto; gap:14px; align-items:center; padding:11px 0; border-bottom:1px dotted var(--rule-soft)">
+          <span class="num" style="font-size:28px; color:var(--moss-mute); width:42px; text-align:right">4.1</span>
+          <div>
+            <div style="font-family:'Fraunces',serif; font-size:15px; font-variation-settings:'opsz' 144,'SOFT' 60,'wght' 470">Genealogy quiz, four generations</div>
+            <div style="font-size:12px; color:var(--ink-3)">22 votes · 3 comments · proposed by Rory</div>
+          </div>
+          <button class="btn ghost host-only" style="padding:6px 10px; font-size:11px">Promote →</button>
+        </div>
+        <div style="display:grid; grid-template-columns:auto 1fr auto; gap:14px; align-items:center; padding:11px 0">
+          <span class="num" style="font-size:28px; color:var(--ink-3); width:42px; text-align:right">2.9</span>
+          <div>
+            <div style="font-family:'Fraunces',serif; font-size:15px; font-variation-settings:'opsz' 144,'SOFT' 60,'wght' 470">Cousin chess tournament (round-robin)</div>
+            <div style="font-size:12px; color:var(--ink-3)">11 votes · 12 comments · proposed by Cousin Niall</div>
+          </div>
+          <span style="font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--ink-3); letter-spacing:.18em">DRAFT</span>
+        </div>
+      </div>
+    </div>
+
+  </section>
+
+  <footer class="colophon">
+    <div>
+      <div class="mark">Set in Fraunces &amp; Geist · printed on parchment.</div>
+      <div style="margin-top:4px">A redesign demo for Clan Plan · self-hosted family reunion ledger.</div>
+    </div>
+    <div style="text-align:right">
+      <div class="smallcaps">Published</div>
+      <div class="display-italic" style="font-size:14px; color:var(--ink-2)">No. 2 — light, dark &amp; quieter for participants</div>
+    </div>
+  </footer>
+
+</main>
+
+<script>
+  // ───── Theme controller (light / dark / system) ─────
+  const root = document.documentElement;
+  const mq = window.matchMedia('(prefers-color-scheme: dark)');
+
+  function applyTheme(pref){
+    const resolved = pref === 'system' ? (mq.matches ? 'dark' : 'light') : pref;
+    root.setAttribute('data-theme', resolved);
+    root.setAttribute('data-theme-pref', pref);
+    localStorage.setItem('cp-theme', pref);
+    document.querySelectorAll('.chooser [data-theme]').forEach(b => {
+      b.setAttribute('aria-pressed', b.dataset.theme === pref ? 'true' : 'false');
+    });
+  }
+  document.querySelectorAll('.chooser [data-theme]').forEach(btn => {
+    btn.addEventListener('click', () => applyTheme(btn.dataset.theme));
+  });
+  mq.addEventListener('change', () => {
+    if ((localStorage.getItem('cp-theme') || 'system') === 'system') applyTheme('system');
+  });
+  applyTheme(localStorage.getItem('cp-theme') || 'system');
+
+  // ───── View controller (host / participant) ─────
+  function applyView(v){
+    root.setAttribute('data-view', v);
+    localStorage.setItem('cp-view', v);
+    document.querySelectorAll('.chooser [data-view]').forEach(b => {
+      b.setAttribute('aria-pressed', b.dataset.view === v ? 'true' : 'false');
+    });
+  }
+  document.querySelectorAll('.chooser [data-view]').forEach(btn => {
+    btn.addEventListener('click', () => applyView(btn.dataset.view));
+  });
+  applyView(localStorage.getItem('cp-view') || 'host');
+
+  // Vote pips
+  document.querySelectorAll('.vote-pips').forEach(group => {
+    const pips = [...group.querySelectorAll('.pip')];
+    pips.forEach((p,i) => p.addEventListener('click', () => {
+      pips.forEach((q,j) => q.classList.toggle('on', j <= i));
+    }));
+  });
+
+  // Phase track click — advance the marker (host demo)
+  const phs = document.querySelectorAll('.ph');
+  phs.forEach((ph, idx) => ph.addEventListener('click', () => {
+    phs.forEach((p,i) => {
+      p.classList.toggle('done', i < idx);
+      p.classList.toggle('now',  i === idx);
+    });
+  }));
+</script>
+</body>
+</html>

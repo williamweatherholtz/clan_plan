@@ -105,14 +105,14 @@ pub fn reunions_router() -> Router<AppState> {
                                               .post(activities::create_activity))
         .route("/:id/activities/:act_id",          patch(activities::update_activity)
                                                      .delete(activities::delete_activity))
-        .route("/:id/activities/:act_id/vote",    put(activities::vote_activity))
         .route("/:id/activities/:act_id/rsvp",    put(activities::rsvp_activity)
                                                      .delete(activities::unrsvp_activity))
         .route("/:id/activities/:act_id/comments",
                                            get(activities::list_comments)
                                               .post(activities::create_comment))
         .route("/:id/activities/:act_id/comments/:cmt_id",
-                                           delete(activities::delete_comment))
+                                           patch(activities::update_comment)
+                                              .delete(activities::delete_comment))
         .route("/:id/activities/:act_id/status",  patch(activities::set_status))
         .route("/:id/activities/:act_id/promote", post(activities::promote_activity))
         // ── Invite links ─────────────────────────────────────────────────────
