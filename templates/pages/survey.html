@@ -24,13 +24,16 @@
 {% else %}
 <div class="space-y-6">
   {% for q in questions %}
-  <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
+  <div id="survey-q-{{ q.question.id }}" class="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
 
     <!-- Question header -->
     <div class="flex justify-between items-start mb-4">
       <h2 class="font-semibold text-gray-900">{{ q.question.question_text }}</h2>
       {% if is_ra %}
-      <button onclick="confirmAction('Delete this question and all its responses?', () => apiFetch('DELETE', '/reunions/{{ reunion.id }}/survey/questions/{{ q.question.id }}'))"
+      <button hx-delete="/reunions/{{ reunion.id }}/survey/questions/{{ q.question.id }}"
+              hx-target="#survey-q-{{ q.question.id }}"
+              hx-swap="delete"
+              hx-confirm="Delete this question and all its responses?"
               class="text-xs text-red-400 hover:text-red-600 flex-shrink-0 ml-3">Delete question</button>
       {% endif %}
     </div>
@@ -39,14 +42,17 @@
     {% if !q.my_responses.is_empty() %}
     <div class="space-y-2 mb-4">
       {% for resp in q.my_responses %}
-      <div class="rounded-lg border border-gray-200 bg-gray-50">
+      <div id="survey-resp-{{ resp.id }}" class="rounded-lg border border-gray-200 bg-gray-50">
         <!-- View mode -->
         <div id="view-{{ resp.id }}" class="flex items-start gap-2 px-3 py-2">
           <p class="flex-1 text-sm text-gray-800 whitespace-pre-wrap">{{ resp.response_text }}</p>
           <div class="flex gap-2 flex-shrink-0">
             <button onclick="startEdit('{{ resp.id }}')"
                     class="text-xs text-amber-600 hover:text-amber-800 font-medium">Edit</button>
-            <button onclick="confirmAction('Delete this response?', () => apiFetch('DELETE', '/reunions/{{ reunion.id }}/survey/questions/{{ q.question.id }}/responses/{{ resp.id }}'))"
+            <button hx-delete="/reunions/{{ reunion.id }}/survey/questions/{{ q.question.id }}/responses/{{ resp.id }}"
+                    hx-target="#survey-resp-{{ resp.id }}"
+                    hx-swap="delete"
+                    hx-confirm="Delete this response?"
                     class="text-xs text-red-400 hover:text-red-600 font-medium">Delete</button>
           </div>
         </div>

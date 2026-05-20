@@ -144,13 +144,15 @@
     {% if reunion.phase.label() != "Archived" %}
     <div class="flex items-center gap-2">
       {% if let Some(prev_p) = reunion.phase.prev() %}
-      <button onclick="apiFetch('POST','/reunions/{{ reunion.id }}/retreat-phase').then(()=>location.reload()).catch(e=>showToast(e.message,'error'))"
+      <button hx-post="/reunions/{{ reunion.id }}/retreat-phase"
+              hx-on::after-request="if (event.detail.successful) window.location.reload()"
               class="px-3 py-2 text-sm font-medium text-amber-700 border border-amber-300 rounded-lg hover:bg-amber-100 transition-colors">
         ← {{ prev_p.label() }}
       </button>
       {% endif %}
       {% if let Some(next_p) = reunion.phase.next() %}
-      <button onclick="apiFetch('POST','/reunions/{{ reunion.id }}/advance-phase').then(()=>location.reload()).catch(e=>showToast(e.message,'error'))"
+      <button hx-post="/reunions/{{ reunion.id }}/advance-phase"
+              hx-on::after-request="if (event.detail.successful) window.location.reload()"
               class="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold rounded-lg transition-colors">
         {{ next_p.label() }} →
       </button>

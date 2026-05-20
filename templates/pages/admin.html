@@ -79,17 +79,29 @@
           <td class="px-4 py-3">
             <div class="flex gap-2 justify-end">
               {% if u.deactivated_at.is_some() %}
-              <button onclick="apiFetch('PATCH','/admin/users/{{ u.id }}',{deactivated:false}).then(()=>location.reload()).catch(e=>showToast(e.message,'error'))"
+              <button hx-patch="/admin/users/{{ u.id }}"
+                      hx-ext="json-enc"
+                      hx-vals='{"deactivated":false}'
+                      hx-on::after-request="if (event.detail.successful) window.location.reload()"
                       class="text-xs text-green-600 hover:underline">Reactivate</button>
               {% else %}
-              <button onclick="apiFetch('PATCH','/admin/users/{{ u.id }}',{deactivated:true}).then(()=>location.reload()).catch(e=>showToast(e.message,'error'))"
+              <button hx-patch="/admin/users/{{ u.id }}"
+                      hx-ext="json-enc"
+                      hx-vals='{"deactivated":true}'
+                      hx-on::after-request="if (event.detail.successful) window.location.reload()"
                       class="text-xs text-red-500 hover:underline">Deactivate</button>
               {% endif %}
               {% if u.role.label() == "member" %}
-              <button onclick="apiFetch('PATCH','/admin/users/{{ u.id }}',{role:'sysadmin'}).then(()=>location.reload()).catch(e=>showToast(e.message,'error'))"
+              <button hx-patch="/admin/users/{{ u.id }}"
+                      hx-ext="json-enc"
+                      hx-vals='{"role":"sysadmin"}'
+                      hx-on::after-request="if (event.detail.successful) window.location.reload()"
                       class="text-xs text-purple-600 hover:underline">Make admin</button>
               {% else %}
-              <button onclick="apiFetch('PATCH','/admin/users/{{ u.id }}',{role:'member'}).then(()=>location.reload()).catch(e=>showToast(e.message,'error'))"
+              <button hx-patch="/admin/users/{{ u.id }}"
+                      hx-ext="json-enc"
+                      hx-vals='{"role":"member"}'
+                      hx-on::after-request="if (event.detail.successful) window.location.reload()"
                       class="text-xs text-gray-500 hover:underline">Remove admin</button>
               {% endif %}
             </div>

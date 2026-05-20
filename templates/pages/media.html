@@ -36,7 +36,7 @@
 {% else %}
 <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
   {% for m in media %}
-  <div class="group relative aspect-square bg-gray-100 rounded-lg overflow-hidden">
+  <div id="media-tile-{{ m.id }}" class="group relative aspect-square bg-gray-100 rounded-lg overflow-hidden">
     {% if m.mime_type.starts_with("image/") %}
     <a href="/api/reunions/{{ reunion.id }}/media/{{ m.id }}" target="_blank">
       <img src="/api/reunions/{{ reunion.id }}/media/{{ m.id }}"
@@ -54,7 +54,10 @@
     {% endif %}
     <!-- Delete button (visible on hover if authorized) -->
     {% if can_delete_media %}
-    <button onclick="confirmAction('Delete this file?',()=>apiFetch('DELETE','/reunions/{{ reunion.id }}/media/{{ m.id }}'))"
+    <button hx-delete="/reunions/{{ reunion.id }}/media/{{ m.id }}"
+            hx-target="#media-tile-{{ m.id }}"
+            hx-swap="delete"
+            hx-confirm="Delete this file?"
             class="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity
                    bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs shadow">
       ✕

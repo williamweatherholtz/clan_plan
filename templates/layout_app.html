@@ -26,6 +26,10 @@
   <script defer src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.4/dist/htmx.min.js"
           integrity="sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+"
           crossorigin="anonymous"></script>
+  <!-- json-enc extension: lets buttons with hx-vals send JSON bodies instead
+       of the default form-encoded. Required because several routes
+       (PATCH /activities/.../status, PATCH /admin/users/...) expect JSON. -->
+  <script defer src="https://cdn.jsdelivr.net/npm/htmx-ext-json-enc@2.0.2/json-enc.js"></script>
   <link rel="stylesheet" href="/assets/app.css">
 </head>
 <body class="min-h-full font-sans">
