@@ -100,11 +100,11 @@ pub async fn get_balances_csv(
     load_reunion(&state, reunion_id).await?;
     let balances = Expense::balances_for_reunion(state.db(), reunion_id).await?;
 
-    let mut csv = String::from("user_id,net_cents,net_dollars\n");
+    let mut csv = String::from("family_unit_id,net_cents,net_dollars\n");
     for b in &balances {
         csv.push_str(&format!(
             "{},{},{:.2}\n",
-            b.user_id,
+            b.family_unit_id,
             b.net_cents,
             b.net_cents as f64 / 100.0
         ));

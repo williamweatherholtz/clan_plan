@@ -386,18 +386,23 @@ input[type="range"] { accent-color: var(--accent); }
    chip states (e.g., "I'm In" green, info amber, danger red). Light text
    on a light tint fails contrast in dark mode; rgba tints over the dark
    surface preserve hue while staying readable. */
+/* The -50 family is for SOFT backgrounds (banners, hover states): subtle
+ * tints are fine. The -100 family is for FILLED chips/badges that carry
+ * same-hue text — these need solid deep backgrounds in dark mode so the
+ * paired text-{color}-700 (which we lighten below) has guaranteed contrast. */
 .dark .bg-amber-50  { background-color: rgba(245,158,11,.12) !important; }
-.dark .bg-amber-100 { background-color: rgba(245,158,11,.20) !important; }
 .dark .bg-red-50    { background-color: rgba(239,68,68,.12)  !important; }
-.dark .bg-red-100   { background-color: rgba(239,68,68,.20)  !important; }
 .dark .bg-green-50  { background-color: rgba(34,197,94,.12)  !important; }
-.dark .bg-green-100 { background-color: rgba(34,197,94,.22)  !important; }
 .dark .bg-blue-50   { background-color: rgba(59,130,246,.12) !important; }
-.dark .bg-blue-100  { background-color: rgba(59,130,246,.22) !important; }
 .dark .bg-indigo-50 { background-color: rgba(99,102,241,.12) !important; }
-.dark .bg-indigo-100{ background-color: rgba(99,102,241,.22) !important; }
 .dark .bg-rose-50   { background-color: rgba(244,63,94,.12)  !important; }
 .dark .bg-orange-50 { background-color: rgba(249,115,22,.12) !important; }
+
+.dark .bg-amber-100 { background-color: #78350f !important; }
+.dark .bg-red-100   { background-color: #7f1d1d !important; }
+.dark .bg-green-100 { background-color: #14532d !important; }
+.dark .bg-blue-100  { background-color: #1e3a8a !important; }
+.dark .bg-indigo-100{ background-color: #312e81 !important; }
 
 /* ── Soft colored borders ────────────────────────────────────────────────── */
 .dark .border-amber-100,
@@ -414,25 +419,40 @@ input[type="range"] { accent-color: var(--accent); }
 .dark .border-orange-100,
 .dark .border-orange-200{ border-color: rgba(249,115,22,.40) !important; }
 
-/* ── Colored text: lighten for dark-mode contrast ────────────────────────── */
-.dark .text-amber-600,
+/* ── Colored text: lighten for dark-mode contrast ──────────────────────────
+ * text-{color}-700 is the standard "filled chip" foreground (paired with
+ * bg-{color}-100 above), so it goes very-light to sit on the deep chip bg.
+ * text-{color}-600/500 etc. are used standalone (no chip bg) — those use
+ * the lighter mid-tone so they're readable on the dark page surface. */
 .dark .text-amber-700,
-.dark .text-amber-800 { color: #fbbf24 !important; }
+.dark .text-amber-800 { color: #fef3c7 !important; }
+.dark .text-amber-400,
+.dark .text-amber-500,
+.dark .text-amber-600 { color: #fbbf24 !important; }
+
+.dark .text-red-700,
+.dark .text-red-800   { color: #fee2e2 !important; }
 .dark .text-red-400,
 .dark .text-red-500,
-.dark .text-red-600,
-.dark .text-red-700   { color: #f87171 !important; }
-.dark .text-green-600,
+.dark .text-red-600   { color: #f87171 !important; }
+
 .dark .text-green-700,
-.dark .text-green-800 { color: #4ade80 !important; }
-.dark .text-blue-600,
+.dark .text-green-800 { color: #dcfce7 !important; }
+.dark .text-green-500,
+.dark .text-green-600 { color: #4ade80 !important; }
+
 .dark .text-blue-700,
-.dark .text-blue-800  { color: #60a5fa !important; }
+.dark .text-blue-800  { color: #dbeafe !important; }
+.dark .text-blue-500,
+.dark .text-blue-600  { color: #60a5fa !important; }
+
+.dark .text-indigo-700 { color: #e0e7ff !important; }
 .dark .text-indigo-500,
-.dark .text-indigo-600,
-.dark .text-indigo-700 { color: #818cf8 !important; }
-.dark .text-rose-600,
-.dark .text-rose-700  { color: #fb7185 !important; }
+.dark .text-indigo-600 { color: #818cf8 !important; }
+
+.dark .text-rose-700  { color: #ffe4e6 !important; }
+.dark .text-rose-500,
+.dark .text-rose-600  { color: #fb7185 !important; }
 
 /* Brand amber buttons (bg-amber-500/600 + text-white) stay colored in dark
  * mode on purpose — they're the primary action accent. text-white stays as-is. */

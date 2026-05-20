@@ -331,9 +331,14 @@ pub struct ExpensePageView {
 }
 
 pub struct BalanceView {
-    pub user_name: String,
+    pub family_name: String,
     pub net_cents: i64,
     pub net_dollars: String,
+}
+
+pub struct FamilyUnitView {
+    pub id: Uuid,
+    pub name: String,
 }
 
 // ── Survey question view ──────────────────────────────────────────────────────
@@ -623,6 +628,7 @@ struct ExpensesPage {
     expenses: Vec<ExpensePageView>,
     balances: Vec<BalanceView>,
     members: Vec<User>,
+    family_units: Vec<FamilyUnitView>,
     current_user_id: Uuid,
     is_ra: bool,
     expenses_confirmed: bool,
@@ -1794,18 +1800,33 @@ pub async fn expenses_page(
         .await
         .unwrap_or_default();
 
+    // Load family units enrolled in this reunion — used both for resolving
+    // balance row names and for the split_among payload in the Add modal.
+    let participating_unit_ids =
+        crate::models::reunion::ReunionFamilyUnit::list_ids_for_reunion(state.db(), reunion_id)
+            .await
+            .unwrap_or_default();
+    let all_units = crate::models::user::FamilyUnit::list_all(state.db())
+        .await
+        .unwrap_or_default();
+    let family_units: Vec<FamilyUnitView> = participating_unit_ids
+        .iter()
+        .filter_map(|id| all_units.iter().find(|u| u.id == *id))
+        .map(|u| FamilyUnitView { id: u.id, name: u.name.clone() })
+        .collect();
+
     let balances = balance_data
         .into_iter()
         .map(|b| {
-            let user_name = all_users
+            let family_name = all_units
                 .iter()
-                .find(|u| u.id == b.user_id)
-                .map(|u| u.display_name.clone())
-                .unwrap_or_else(|| b.user_id.to_string());
+                .find(|u| u.id == b.family_unit_id)
+                .map(|u| u.name.clone())
+                .unwrap_or_else(|| b.family_unit_id.to_string());
             let dollars = b.net_cents / 100;
             let cents = (b.net_cents % 100).unsigned_abs();
             let net_dollars = format!("{}.{:02}", dollars.abs(), cents);
-            BalanceView { user_name, net_cents: b.net_cents, net_dollars }
+            BalanceView { family_name, net_cents: b.net_cents, net_dollars }
         })
         .collect();
 
@@ -1828,6 +1849,7 @@ pub async fn expenses_page(
         expenses,
         balances,
         members: all_users,
+        family_units,
         current_user_id: user.id,
         is_ra,
         expenses_confirmed,

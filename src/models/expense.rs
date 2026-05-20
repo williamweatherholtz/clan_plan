@@ -23,7 +23,7 @@ pub struct Expense {
 pub struct ExpenseSplit {
     pub id: Uuid,
     pub expense_id: Uuid,
-    pub user_id: Uuid,
+    pub family_unit_id: Uuid,
     pub amount_cents: i32,
 }
 
@@ -35,15 +35,16 @@ pub struct NewExpense {
     pub amount_cents: i32,
     /// Defaults to today if omitted.
     pub expense_date: Option<NaiveDate>,
-    /// Who is splitting this expense. If empty, defaults to all reunion members —
-    /// but the caller should pass all member IDs; the empty check is a fallback guard.
+    /// Family units splitting this expense — one share per unit, regardless
+    /// of how many users sit in each unit. Caller passes all participating
+    /// unit IDs; the empty check is a fallback guard.
     pub split_among: Vec<Uuid>,
 }
 
-/// Running balance per member: positive means they are owed money.
+/// Running balance per family unit: positive means the unit is owed money.
 #[derive(Debug, Clone, Serialize)]
-pub struct MemberBalance {
-    pub user_id: Uuid,
+pub struct UnitBalance {
+    pub family_unit_id: Uuid,
     pub net_cents: i64,
 }
 
@@ -84,7 +85,7 @@ impl Expense {
             return Err(AppError::BadRequest("amount must be greater than zero".into()));
         }
         if new.split_among.is_empty() {
-            return Err(AppError::BadRequest("split_among must not be empty — pass all member IDs".into()));
+            return Err(AppError::BadRequest("split_among must not be empty — pass all participating family unit IDs".into()));
         }
 
         let expense_date = new.expense_date.unwrap_or_else(|| Local::now().date_naive());
@@ -107,13 +108,13 @@ impl Expense {
         .fetch_one(&mut *tx)
         .await?;
 
-        for (user_id, amount_cents) in splits {
+        for (family_unit_id, amount_cents) in splits {
             sqlx::query(
-                r#"INSERT INTO expense_splits (expense_id, user_id, amount_cents)
+                r#"INSERT INTO expense_splits (expense_id, family_unit_id, amount_cents)
                    VALUES ($1, $2, $3)"#,
             )
             .bind(expense.id)
-            .bind(user_id)
+            .bind(family_unit_id)
             .bind(amount_cents)
             .execute(&mut *tx)
             .await?;
@@ -149,36 +150,42 @@ impl Expense {
         Ok(())
     }
 
-    /// Compute each member's net balance across all expenses for a reunion.
-    /// Positive net_cents = they are owed money; negative = they owe money.
+    /// Compute each family unit's net balance across all expenses for a reunion.
+    /// Positive net_cents = the unit is owed money; negative = the unit owes.
+    /// "Paid" rolls up via users.family_unit_id; "owed" is the unit's share
+    /// recorded in expense_splits.
     pub async fn balances_for_reunion(
         pool: &PgPool,
         reunion_id: Uuid,
-    ) -> AppResult<Vec<MemberBalance>> {
-        // Paid = money out of pocket; owed = their share of expenses
+    ) -> AppResult<Vec<UnitBalance>> {
         let rows = sqlx::query_as::<_, (Uuid, i64)>(
             r#"SELECT
-                u.id AS user_id,
+                fu.id AS family_unit_id,
                 COALESCE(paid.total, 0) - COALESCE(owed.total, 0) AS net_cents
                FROM (
-                   SELECT DISTINCT user_id FROM expense_splits es
+                   SELECT DISTINCT family_unit_id FROM expense_splits es
                    JOIN expenses e ON e.id = es.expense_id
                    WHERE e.reunion_id = $1
                    UNION
-                   SELECT DISTINCT paid_by_user_id FROM expenses WHERE reunion_id = $1
-               ) u(id)
+                   SELECT DISTINCT u.family_unit_id
+                   FROM expenses e
+                   JOIN users u ON u.id = e.paid_by_user_id
+                   WHERE e.reunion_id = $1 AND u.family_unit_id IS NOT NULL
+               ) fu(id)
                LEFT JOIN (
-                   SELECT paid_by_user_id, SUM(amount_cents) AS total
-                   FROM expenses WHERE reunion_id = $1
-                   GROUP BY paid_by_user_id
-               ) paid ON paid.paid_by_user_id = u.id
+                   SELECT u.family_unit_id, SUM(e.amount_cents) AS total
+                   FROM expenses e
+                   JOIN users u ON u.id = e.paid_by_user_id
+                   WHERE e.reunion_id = $1 AND u.family_unit_id IS NOT NULL
+                   GROUP BY u.family_unit_id
+               ) paid ON paid.family_unit_id = fu.id
                LEFT JOIN (
-                   SELECT es.user_id, SUM(es.amount_cents) AS total
+                   SELECT es.family_unit_id, SUM(es.amount_cents) AS total
                    FROM expense_splits es
                    JOIN expenses e ON e.id = es.expense_id
                    WHERE e.reunion_id = $1
-                   GROUP BY es.user_id
-               ) owed ON owed.user_id = u.id
+                   GROUP BY es.family_unit_id
+               ) owed ON owed.family_unit_id = fu.id
                ORDER BY net_cents DESC"#,
         )
         .bind(reunion_id)
@@ -187,7 +194,7 @@ impl Expense {
 
         Ok(rows
             .into_iter()
-            .map(|(user_id, net_cents)| MemberBalance { user_id, net_cents })
+            .map(|(family_unit_id, net_cents)| UnitBalance { family_unit_id, net_cents })
             .collect())
     }
 }
