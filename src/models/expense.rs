@@ -50,6 +50,17 @@ pub struct UnitBalance {
 
 // ── Pure business logic ────────────────────────────────────────────────────────
 
+/// Format a cents-integer (positive or negative) as a dollar string with
+/// two decimal places, e.g. `1050 → "10.50"`, `-333 → "-3.33"`. Used by
+/// both the JSON expenses route (CSV export) and the HTML pages for
+/// consistent rendering. Returns just the numeric part — callers prepend
+/// `$` or `-$` based on context.
+pub fn format_cents(cents: i64) -> String {
+    let dollars = cents / 100;
+    let frac = (cents % 100).unsigned_abs();
+    format!("{}.{:02}", dollars.abs(), frac)
+}
+
 /// Distribute `total_cents` evenly across `members`.
 /// Remainder cents (from integer division) are distributed to the first N members.
 ///

@@ -479,13 +479,7 @@ async fn find_or_create_google_user(
 
 // ── Avatar URL allowlist ───────────────────────────────────────────────────────
 
-fn is_allowed_avatar_url(url: &str) -> bool {
-    const ALLOWED_PREFIXES: &[&str] = &[
-        "https://lh3.googleusercontent.com/",
-        "https://avatars.githubusercontent.com/",
-    ];
-    ALLOWED_PREFIXES.iter().any(|prefix| url.starts_with(prefix))
-}
+use crate::auth::is_allowed_avatar_url;
 
 // ── GET /me ────────────────────────────────────────────────────────────────────
 

@@ -152,7 +152,13 @@ where
                 return Ok(SlugOrId(r.id));
             }
         }
-        Err(Redirect::to("/dashboard").into_response())
+        // Render a 404 instead of silently redirecting to /dashboard — the
+        // silent redirect was confusing UX (looks like a session expiry).
+        Err((
+            axum::http::StatusCode::NOT_FOUND,
+            "reunion not found — it may have been deleted or the URL is wrong",
+        )
+            .into_response())
     }
 }
 
@@ -213,6 +219,15 @@ pub struct CalendarMonth {
 }
 
 fn build_calendar_months(start: NaiveDate, end: NaiveDate) -> Vec<CalendarMonth> {
+    // Degenerate ranges silently produced a blank calendar; surface and bail
+    // instead so a callsite bug doesn't quietly disappear into the UI.
+    if start > end {
+        tracing::warn!(
+            ?start, ?end,
+            "build_calendar_months called with start > end — returning empty"
+        );
+        return Vec::new();
+    }
     let mut months = Vec::new();
     let mut cur = NaiveDate::from_ymd_opt(start.year(), start.month(), 1).unwrap();
     let end_month = NaiveDate::from_ymd_opt(end.year(), end.month(), 1).unwrap();
@@ -1113,10 +1128,7 @@ pub struct ProfileForm {
     csrf_token: String,
 }
 
-const ALLOWED_AVATAR_PREFIXES: &[&str] = &[
-    "https://lh3.googleusercontent.com/",
-    "https://avatars.githubusercontent.com/",
-];
+use crate::auth::is_allowed_avatar_url;
 
 pub async fn profile_form(
     session: Session,
@@ -1136,7 +1148,7 @@ pub async fn profile_form(
 
     let avatar_trimmed = form.avatar_url.trim();
     if !avatar_trimmed.is_empty()
-        && !ALLOWED_AVATAR_PREFIXES.iter().any(|p| avatar_trimmed.starts_with(p))
+        && !is_allowed_avatar_url(avatar_trimmed)
     {
         set_flash(&session, "error", "Avatar URL must be a Google or GitHub profile image URL.").await;
         return Ok(Redirect::to("/profile").into_response());
@@ -1422,7 +1434,10 @@ pub async fn availability_page(
             .into_iter()
             .map(|e| (e.available_date.format("%Y-%m-%d").to_string(), e.member_count))
             .collect();
-        (serde_json::to_string(&map).unwrap_or_else(|_| "{}".into()), total)
+        // HashMap<String, i64> always serializes — make a future refactor
+        // that introduces non-string keys fail loudly instead of silently
+        // returning "{}" to the template.
+        (serde_json::to_string(&map).expect("HashMap<String,i64> JSON serialization is infallible"), total)
     } else {
         ("{}".into(), 0)
     };
@@ -1780,9 +1795,7 @@ pub async fn expenses_page(
                 .find(|u| u.id == e.paid_by_user_id)
                 .map(|u| u.display_name.clone())
                 .unwrap_or_else(|| e.paid_by_user_id.to_string());
-            let dollars = e.amount_cents / 100;
-            let cents = (e.amount_cents % 100).abs();
-            let amount_str = format!("${}.{:02}", dollars, cents);
+            let amount_str = format!("${}", crate::models::expense::format_cents(e.amount_cents as i64));
             ExpensePageView { expense: e, paid_by_name, amount_str }
         })
         .collect();
@@ -1811,9 +1824,7 @@ pub async fn expenses_page(
                 .find(|u| u.id == b.family_unit_id)
                 .map(|u| u.name.clone())
                 .unwrap_or_else(|| b.family_unit_id.to_string());
-            let dollars = b.net_cents / 100;
-            let cents = (b.net_cents % 100).unsigned_abs();
-            let net_dollars = format!("{}.{:02}", dollars.abs(), cents);
+            let net_dollars = crate::models::expense::format_cents(b.net_cents);
             BalanceView { family_name, net_cents: b.net_cents, net_dollars }
         })
         .collect();
