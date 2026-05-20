@@ -173,21 +173,22 @@ pub struct NavTab {
 fn reunion_tabs(_reunion_id: Uuid, active_path: &str) -> Vec<NavTab> {
     // (path, label, group)
     // group 0 = always-visible top-level tabs
-    // group 1 = "Setup" dropdown (planning / prep)
-    // group 2 = "Reunion" dropdown (during / after)
+    // group 1 = "Plan" dropdown (pre-day setup; not relevant once the
+    //           reunion is live but still reachable for edits)
+    //
+    // Schedule and Today are deliberately not in the bar — Overview adapts
+    // by phase and surfaces them. /schedule and /today still resolve, so
+    // existing links keep working.
     let defs: &[(&str, &str, u8)] = &[
         ("",              "Overview",      0),
-        ("activities",    "Activities",    0),
-        ("settings",      "Settings",      0),
-        // Planning / prep
-        ("availability",  "Availability",  1),
+        ("activities",    "Check events",  0),
+        // Plan dropdown
+        ("availability",  "Dates",         1),
         ("locations",     "Locations",     1),
         ("expenses",      "Expenses",      1),
         ("survey",        "Survey",        1),
-        // During / always-on
-        ("today",         "Today",         2),
-        ("schedule",      "Schedule",      2),
-        ("media",         "Photos",        2),
+        ("media",         "Photos",        1),
+        ("settings",      "Settings",      1),
     ];
     // Which group does the active tab belong to?
     let active_group = defs.iter()
@@ -1716,7 +1717,7 @@ pub async fn activities_page(
         is_sysadmin: user.is_sysadmin(),
         flash,
         tabs: reunion_tabs(reunion_id, "activities"),
-        tab_label: "Activities",
+        tab_label: "Check events",
         reunion,
         reunion_date,
         activities,

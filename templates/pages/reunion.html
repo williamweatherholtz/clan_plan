@@ -3,238 +3,77 @@
 {% block title %}{{ reunion.title }}{% endblock %}
 
 {% block reunion_content %}
-
-<!-- ── Hero card: title + facts + RA (compact) ────────────────────────────── -->
-<section class="mb-5 px-6 py-5" style="background: var(--surface); border: 1px solid var(--rule); box-shadow: 4px 4px 0 var(--moss);">
-  {% let phase_label = reunion.phase.label() %}
-
-  <div class="flex flex-wrap items-center gap-3 mb-2">
-    {% if phase_label == "Reunion Active" %}
-      <span class="stamp" style="font-size: 9px;">{{ phase_label }}</span>
-    {% else if phase_label == "Archived" %}
-      <span class="stamp muted" style="font-size: 9px;">{{ phase_label }}</span>
-    {% else if phase_label == "Post-Reunion" %}
-      <span class="stamp moss" style="font-size: 9px;">{{ phase_label }}</span>
-    {% else if phase_label == "Draft" %}
-      <span class="stamp muted" style="font-size: 9px;">{{ phase_label }}</span>
-    {% else %}
-      <span class="stamp brass" style="font-size: 9px;">{{ phase_label }}</span>
-    {% endif %}
-    {% if let Some(slug) = reunion.slug %}
-    <span class="mono" style="color: var(--ink-3);">/r/{{ slug }}</span>
-    {% endif %}
-  </div>
-
-  <h1 class="font-display leading-none mb-2" style="color: var(--ink); font-size: 38px; font-style: italic; font-variation-settings: 'opsz' 144, 'SOFT' 25, 'wght' 400; letter-spacing: -.02em;">
-    {{ reunion.title }}
-  </h1>
-
-  {% let has_facts = reunion_date.is_some() || selected_location_name.is_some() || !ra_names.is_empty() %}
-  {% if has_facts %}
-  <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm" style="color: var(--ink-2);">
+<div class="mb-6 flex items-end justify-between flex-wrap gap-4">
+  <div>
+    <h1 class="text-3xl font-bold" style="color: var(--text);">{{ reunion.title }}</h1>
     {% match reunion_date %}
     {% when Some with (rd) %}
-    <span class="font-display" style="font-variation-settings: 'opsz' 144, 'SOFT' 30, 'wght' 470;">{{ rd.start_date }} – {{ rd.end_date }}</span>
+    <p class="mt-1 text-base" style="color: var(--muted);">
+      {{ rd.start_date }} – {{ rd.end_date }}{% if let Some(loc_name) = selected_location_name %} · {{ loc_name }}{% endif %}
+    </p>
     {% when None %}
-    {% endmatch %}
-    {% if reunion_date.is_some() && selected_location_name.is_some() %}
-    <span style="color: var(--ink-3);">·</span>
-    {% endif %}
     {% if let Some(loc_name) = selected_location_name %}
-    <span class="font-display" style="font-variation-settings: 'opsz' 144, 'SOFT' 30, 'wght' 470;">{{ loc_name }}</span>
+    <p class="mt-1 text-base" style="color: var(--muted);">{{ loc_name }}</p>
     {% endif %}
-    {% if (reunion_date.is_some() || selected_location_name.is_some()) && !ra_names.is_empty() %}
-    <span style="color: var(--ink-3);">·</span>
-    {% endif %}
-    {% if !ra_names.is_empty() %}
-    <span style="color: var(--ink-3);">Hosted by <span class="font-display" style="color: var(--ink-2); font-style: italic; font-variation-settings: 'opsz' 144, 'SOFT' 30, 'wght' 450;">{{ ra_names }}</span></span>
-    {% endif %}
+    {% endmatch %}
   </div>
-  {% endif %}
+  <div class="flex gap-2 flex-wrap">
+    <a href="{{ base_url }}/activities" class="btn btn-primary">Check events</a>
+    <a href="{{ base_url }}/schedule" class="btn btn-secondary">View full schedule</a>
+  </div>
+</div>
 
+{% let has_info = reunion.description.is_some() || !ra_names.is_empty() %}
+{% if has_info %}
+<div class="mb-6 card p-5">
   {% if let Some(desc) = reunion.description %}
-  <p class="mt-3 text-sm" style="color: var(--ink-2); max-width: 64ch;">{{ desc }}</p>
+  <p style="color: var(--text);">{{ desc }}</p>
   {% endif %}
-</section>
-
-<!-- ── Activity Ideas preview (always visible, any phase) ────────────────── -->
-{% if !top_activities.is_empty() || phase_label != "Archived" %}
-<section class="mb-6">
-  <div class="flex items-end justify-between mb-3 pb-2" style="border-bottom: 1px solid var(--rule-soft);">
-    <div class="flex items-center gap-3">
-      <span class="smallcaps">Activity Ideas</span>
-      {% if activity_total > 0 %}
-      <span class="text-xs" style="color: var(--ink-3);">{{ activity_total }} idea{% if activity_total != 1 %}s{% endif %}</span>
-      {% endif %}
-    </div>
-    <a href="{{ base_url }}/activities" class="text-xs font-semibold transition-colors" style="color: var(--moss);">
-      View all →
-    </a>
-  </div>
-
-  {% if top_activities.is_empty() %}
-  <div class="px-5 py-6 text-center" style="background: var(--surface); border: 1px solid var(--rule-soft);">
-    <p class="font-display italic mb-1" style="color: var(--ink-2); font-size: 16px;">No ideas yet.</p>
-    <p class="text-xs mb-3" style="color: var(--ink-3);">What should we do this year?</p>
-    <a href="{{ base_url }}/activities" class="btn-secondary" style="font-size: 12px; padding: 8px 14px;">
-      Suggest an idea →
-    </a>
-  </div>
-  {% else %}
-  <div style="background: var(--surface); border: 1px solid var(--rule);">
-    {% for a in top_activities %}
-    <a href="{{ base_url }}/activities" class="grid items-center gap-3 px-4 py-3 transition-colors hover:bg-indigo-50"
-       style="grid-template-columns: auto 1fr auto;
-              {% if !loop.last %}border-bottom: 1px solid var(--rule-soft);{% endif %}">
-
-      <!-- Category + status indicator -->
-      <div class="flex items-center gap-1.5">
-        {% if a.status == "pinned" %}
-        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor" style="color: var(--burgundy);">
-          <path d="M12 2 14 8h6l-5 4 2 8-5-4-5 4 2-8-5-4h6z"/>
-        </svg>
-        {% endif %}
-        {% if a.category == "group" %}
-        <span class="block-kind group" style="font-size: 9px;">group</span>
-        {% else if a.category == "meal" %}
-        <span class="block-kind meal" style="font-size: 9px;">meal</span>
-        {% else %}
-        <span class="block-kind optional" style="font-size: 9px;">optional</span>
-        {% endif %}
-      </div>
-
-      <!-- Title -->
-      <div class="font-display truncate" style="color: var(--ink); font-size: 15px; font-variation-settings: 'opsz' 144, 'SOFT' 30, 'wght' 470;">
-        {{ a.title }}
-      </div>
-
-      <!-- Stats -->
-      <div class="flex items-center gap-3 text-xs whitespace-nowrap" style="color: var(--ink-3);">
-        {% if a.comment_count > 0 %}
-        <span title="comments">
-          <svg class="w-3 h-3 inline -mt-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8v.5z"/></svg>
-          {{ a.comment_count }}
-        </span>
-        {% endif %}
-        {% if a.rsvp_count > 0 || a.my_rsvp %}
-        <span class="{% if a.my_rsvp %}font-bold{% endif %}" style="{% if a.my_rsvp %}color: var(--moss);{% endif %}" title="I'm in">
-          ✓ {{ a.rsvp_count }}
-        </span>
-        {% endif %}
-      </div>
-    </a>
-    {% endfor %}
-  </div>
+  {% if !ra_names.is_empty() %}
+  <p class="text-sm {% if reunion.description.is_some() %}mt-3{% endif %}" style="color: var(--muted);">
+    Organised by <span class="font-bold" style="color: var(--text);">{{ ra_names }}</span>
+  </p>
   {% endif %}
-</section>
+</div>
 {% endif %}
 
-<!-- ── Phase Ledger (RA only) ─────────────────────────────────────────────── -->
-{% if is_ra && phase_label != "Archived" %}
-{% let phase = reunion.phase.label() %}
-<section class="mb-6 px-8 py-7 relative" style="background: var(--surface); border: 1px solid var(--rule);">
-  <span class="smallcaps absolute" style="top: -8px; left: 22px; background: var(--bg); padding: 0 10px;">Phase Ledger · Host Controls</span>
-
-  <div class="phase-track mt-2">
-    <div class="ph {% if phase == "Draft" %}now{% else %}done{% endif %}"><div class="dot"></div><div class="label">Draft</div></div>
-    <div class="ph {% if phase == "Collecting Availability" %}now{% else if phase == "Draft" %}{% else %}done{% endif %}"><div class="dot"></div><div class="label">Availability</div></div>
-    <div class="ph {% if phase == "Voting on Locations" %}now{% else if phase == "Draft" || phase == "Collecting Availability" %}{% else %}done{% endif %}"><div class="dot"></div><div class="label">Locations</div></div>
-    <div class="ph {% if phase == "Prep Completed" %}now{% else if phase == "Draft" || phase == "Collecting Availability" || phase == "Voting on Locations" %}{% else %}done{% endif %}"><div class="dot"></div><div class="label">Prep</div></div>
-    <div class="ph {% if phase == "Reunion Active" %}now{% else if phase == "Post-Reunion" || phase == "Archived" %}done{% endif %}"><div class="dot"></div><div class="label">Active</div></div>
-    <div class="ph {% if phase == "Post-Reunion" %}now{% else if phase == "Archived" %}done{% endif %}"><div class="dot"></div><div class="label">Reflection</div></div>
-    <div class="ph {% if phase == "Archived" %}now{% endif %}"><div class="dot"></div><div class="label">Archived</div></div>
-  </div>
-
-  <div class="mt-6 pt-5 flex justify-between items-center gap-4 flex-wrap" style="border-top: 1px solid var(--rule-soft);">
+<!-- Phase control (RA only) -->
+{% if is_ra && reunion.phase.label() != "Archived" %}
+<div class="mb-5 bg-indigo-50 border border-indigo-100 rounded-xl p-4">
+  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
     <div>
-      <div class="font-display" style="color: var(--ink); font-size: 18px; font-variation-settings: 'opsz' 144, 'SOFT' 30, 'wght' 450;">
-        {% if phase == "Draft" %}Setup is <em style="color: var(--burgundy); font-style: italic;">in progress</em>.
-        {% else if phase == "Collecting Availability" %}Members are <em style="color: var(--burgundy); font-style: italic;">marking their dates</em>.
-        {% else if phase == "Voting on Locations" %}Members are <em style="color: var(--burgundy); font-style: italic;">voting on candidates</em>.
-        {% else if phase == "Prep Completed" %}Prep is <em style="color: var(--burgundy); font-style: italic;">complete</em> — auto-activates on the start date.
-        {% else if phase == "Reunion Active" %}The reunion is <em style="color: var(--burgundy); font-style: italic;">under way</em>.
-        {% else if phase == "Post-Reunion" %}Survey is <em style="color: var(--burgundy); font-style: italic;">open</em> for reflections.
-        {% endif %}
-      </div>
-      <div class="text-xs mt-1" style="color: var(--ink-3);">
-        {% if let Some(next_p) = reunion.phase.next() %}Next stage: {{ next_p.label() }}{% endif %}
-      </div>
+      <p class="text-xs font-semibold text-indigo-500 uppercase tracking-widest">Current phase</p>
+      <p class="font-display text-lg font-bold mt-0.5" style="color:var(--ink)">{{ reunion.phase.label() }}</p>
     </div>
     <div class="flex items-center gap-2">
       {% if let Some(prev_p) = reunion.phase.prev() %}
       <button onclick="apiFetch('POST','/reunions/{{ reunion.id }}/retreat-phase').then(()=>location.reload()).catch(e=>showToast(e.message,'error'))"
-              class="btn-ghost">← {{ prev_p.label() }}</button>
+              class="px-3 py-2 text-sm font-medium text-indigo-700 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors">
+        ← {{ prev_p.label() }}
+      </button>
       {% endif %}
       {% if let Some(next_p) = reunion.phase.next() %}
       <button onclick="apiFetch('POST','/reunions/{{ reunion.id }}/advance-phase').then(()=>location.reload()).catch(e=>showToast(e.message,'error'))"
-              class="btn-primary">{{ next_p.label() }} →</button>
+              class="btn-primary px-4 py-2 text-sm rounded-lg">
+        {{ next_p.label() }} →
+      </button>
       {% endif %}
     </div>
   </div>
-</section>
+</div>
 {% endif %}
 
-<!-- ── Member "Your turn" CTA — quiet, only when something is asked ─────── -->
-{% if !is_ra %}
-{% let phase_lbl = reunion.phase.label() %}
-{% if phase_lbl == "Collecting Availability" %}
-<section class="turn-card mb-6">
-  <div class="copy">
-    <span class="stamp brass">Availability Open</span>
-    <h2>Mark when you're <em>free</em>.</h2>
-    <p>The organiser needs your dates to settle on a window for the reunion.</p>
-  </div>
-  <div class="cta">
-    <a class="btn-primary" href="{{ base_url }}/availability">Open the calendar →</a>
-  </div>
-</section>
-{% else if phase_lbl == "Voting on Locations" && location_count > 0 %}
-<section class="turn-card mb-6">
-  <div class="copy">
-    <span class="stamp brass">Voting Open</span>
-    <h2>Cast your <em>vote</em> on locations.</h2>
-    <p>{{ location_count }} candidate{% if location_count != 1 %}s{% endif %} — give each a private 1–5 score.</p>
-  </div>
-  <div class="cta">
-    <a class="btn-primary" href="{{ base_url }}/locations">View &amp; vote →</a>
-  </div>
-</section>
-{% else if phase_lbl == "Reunion Active" %}
-<section class="turn-card mb-6">
-  <div class="copy">
-    <span class="stamp">Happening Now</span>
-    <h2>The reunion is <em>under way</em>.</h2>
-    <p>See today's roll-call, photos, and the long table.</p>
-  </div>
-  <div class="cta">
-    <a class="btn-primary" href="{{ base_url }}/today">Today's roll-call →</a>
-  </div>
-</section>
-{% else if phase_lbl == "Post-Reunion" %}
-<section class="turn-card mb-6">
-  <div class="copy">
-    <span class="stamp moss">Survey Open</span>
-    <h2>Share your <em>thoughts</em>.</h2>
-    <p>A short post-reunion survey — your reflections help next year's host.</p>
-  </div>
-  <div class="cta">
-    <a class="btn-primary" href="{{ base_url }}/survey">Take the survey →</a>
-  </div>
-</section>
-{% endif %}
-{% endif %}
-
-<!-- ── Phase-specific content ─────────────────────────────────────────────── -->
+<!-- ── Phase-specific content ───────────────────────────────────────────────── -->
 
 {% if reunion.phase.label() == "Draft" %}
   {% if is_ra %}
   <div class="card p-5">
-    <p class="text-sm" style="color: var(--ink-2);">Set up the reunion details in <a href="{{ base_url }}/settings" style="color: var(--moss); text-decoration: underline;">Settings</a>, then advance to the Availability phase when ready.</p>
+    <p class="text-sm text-gray-600">Set up the reunion details in <a href="{{ base_url }}/settings" class="text-indigo-600 hover:underline font-medium">Settings</a>, then advance to the Availability phase when ready.</p>
   </div>
   {% else %}
   <div class="card p-5 text-center py-12">
-    <p class="font-display italic mb-2" style="color: var(--ink-2); font-size: 18px;">The organiser is still setting things up.</p>
-    <p class="text-sm" style="color: var(--ink-3);">Check back soon.</p>
+    <p class="text-2xl mb-2">🏕️</p>
+    <p class="text-gray-500">The organiser is still setting things up — check back soon!</p>
   </div>
   {% endif %}
 
@@ -246,13 +85,13 @@
       <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
         <div class="flex-1 min-w-0">
           <div class="flex items-center gap-2 mb-1">
-            <span class="font-display" style="color: var(--ink); font-size: 18px; font-variation-settings: 'opsz' 144, 'SOFT' 30, 'wght' 460;">Availability poll</span>
-            <span id="avail-status" class="hidden text-xs px-2 py-0.5 font-medium"></span>
+            <span class="text-base font-semibold text-gray-900">📅 Availability poll</span>
+            <span id="avail-status" class="hidden text-xs px-2 py-0.5 rounded-full font-medium"></span>
           </div>
-          <p class="text-sm" style="color: var(--ink-3);">{{ avail_response_count }} of {{ member_count }} members responded</p>
+          <p class="text-sm text-gray-500">{{ avail_response_count }} of {{ member_count }} members responded</p>
         </div>
         <a href="{{ base_url }}/availability"
-           class="flex-shrink-0 btn-primary w-full sm:w-auto text-center">
+           class="flex-shrink-0 btn-primary px-4 py-2 text-sm rounded-lg w-full sm:w-auto text-center">
           Mark availability →
         </a>
       </div>
@@ -264,14 +103,14 @@
       <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
         <div class="flex-1 min-w-0">
           <div class="flex items-center gap-2 mb-1">
-            <span class="font-display" style="color: var(--ink); font-size: 18px; font-variation-settings: 'opsz' 144, 'SOFT' 30, 'wght' 460;">Location candidates</span>
-            <span class="stamp brass" style="font-size: 9px;">Voting open</span>
-            <span id="loc-status" class="hidden text-xs px-2 py-0.5 font-medium"></span>
+            <span class="text-base font-semibold text-gray-900">📍 Location candidates</span>
+            <span class="text-xs px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 font-medium">Voting open</span>
+            <span id="loc-status" class="hidden text-xs px-2 py-0.5 rounded-full font-medium"></span>
           </div>
-          <p class="text-sm" style="color: var(--ink-3);">{{ location_count }} candidate{% if location_count != 1 %}s{% endif %}</p>
+          <p class="text-sm text-gray-500">{{ location_count }} candidate{% if location_count != 1 %}s{% endif %}</p>
         </div>
         <a href="{{ base_url }}/locations"
-           class="flex-shrink-0 btn-primary w-full sm:w-auto text-center">
+           class="flex-shrink-0 btn-primary px-4 py-2 text-sm rounded-lg w-full sm:w-auto text-center">
           View &amp; vote →
         </a>
       </div>
@@ -280,10 +119,11 @@
     <div class="card p-5">
       <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <span class="font-display" style="color: var(--ink); font-size: 18px;">Location candidates</span>
-          <p class="text-sm mt-0.5" style="color: var(--ink-3);">Add candidates so members can vote in parallel.</p>
+          <span class="text-base font-semibold text-gray-900">📍 Location candidates</span>
+          <p class="text-sm text-gray-500 mt-0.5">Add candidates so members can vote in parallel.</p>
         </div>
-        <a href="{{ base_url }}/locations" class="flex-shrink-0 btn-secondary w-full sm:w-auto text-center">
+        <a href="{{ base_url }}/locations"
+           class="flex-shrink-0 px-4 py-2 text-sm font-medium text-indigo-600 border border-indigo-200 rounded-lg hover:bg-indigo-50 transition-colors w-full sm:w-auto text-center">
           Add candidates →
         </a>
       </div>
@@ -300,14 +140,14 @@
       <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
         <div class="flex-1 min-w-0">
           <div class="flex items-center gap-2 mb-1">
-            <span class="font-display" style="color: var(--ink); font-size: 18px; font-variation-settings: 'opsz' 144, 'SOFT' 30, 'wght' 460;">Location candidates</span>
-            <span class="stamp brass" style="font-size: 9px;">Voting open</span>
-            <span id="loc-status" class="hidden text-xs px-2 py-0.5 font-medium"></span>
+            <span class="text-base font-semibold text-gray-900">📍 Location candidates</span>
+            <span class="text-xs px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 font-medium">Voting open</span>
+            <span id="loc-status" class="hidden text-xs px-2 py-0.5 rounded-full font-medium"></span>
           </div>
-          <p class="text-sm" style="color: var(--ink-3);">{{ location_count }} candidate{% if location_count != 1 %}s{% endif %}</p>
+          <p class="text-sm text-gray-500">{{ location_count }} candidate{% if location_count != 1 %}s{% endif %}</p>
         </div>
         <a href="{{ base_url }}/locations"
-           class="flex-shrink-0 btn-primary w-full sm:w-auto text-center">
+           class="flex-shrink-0 btn-primary px-4 py-2 text-sm rounded-lg w-full sm:w-auto text-center">
           View &amp; vote →
         </a>
       </div>
@@ -316,17 +156,18 @@
     <div class="card p-5">
       <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <span class="font-display" style="color: var(--ink); font-size: 18px;">Location candidates</span>
-          <p class="text-sm mt-0.5" style="color: var(--ink-3);">No candidates yet — add some for the group to vote on.</p>
+          <span class="text-base font-semibold text-gray-900">📍 Location candidates</span>
+          <p class="text-sm text-gray-500 mt-0.5">No candidates yet — add some for the group to vote on.</p>
         </div>
-        <a href="{{ base_url }}/locations" class="flex-shrink-0 btn-secondary w-full sm:w-auto text-center">
+        <a href="{{ base_url }}/locations"
+           class="flex-shrink-0 px-4 py-2 text-sm font-medium text-indigo-600 border border-indigo-200 rounded-lg hover:bg-indigo-50 transition-colors w-full sm:w-auto text-center">
           Add candidates →
         </a>
       </div>
     </div>
     {% else %}
     <div class="card p-5">
-      <p class="text-sm" style="color: var(--ink-3);">The organiser hasn't added location candidates yet.</p>
+      <p class="text-sm text-gray-500">The organiser hasn't added location candidates yet.</p>
     </div>
     {% endif %}
 
@@ -335,24 +176,36 @@
 {% else if reunion.phase.label() == "Prep Completed" %}
   <div class="space-y-4">
     {% if is_ra %}
-    <div class="p-4 text-sm" style="background: rgba(184,137,62,.08); border: 1px solid var(--brass-deep); color: var(--brass-deep);">
+    <div class="bg-indigo-50 border border-indigo-200 rounded-xl p-4 text-sm text-indigo-700">
       <strong>Waiting for start date.</strong> The reunion will switch to Active automatically when the dates arrive.
     </div>
     {% endif %}
 
     <!-- Quick actions -->
-    <div class="grid grid-cols-1 sm:grid-cols-3 gap-0" style="border: 1px solid var(--rule); background: var(--surface);">
-      <a href="{{ base_url }}/activities" class="block p-5 transition-colors hover:bg-indigo-50" style="border-right: 1px solid var(--rule-soft);">
-        <div class="smallcaps mb-1">Activities</div>
-        <div class="font-display" style="color: var(--ink); font-size: 18px; font-variation-settings: 'opsz' 144, 'SOFT' 30, 'wght' 460;">Review &amp; build schedule</div>
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <a href="{{ base_url }}/activities"
+         class="card card-hover p-4 flex items-center gap-3">
+        <span class="text-2xl leading-none">💡</span>
+        <div>
+          <p class="font-semibold text-gray-900 text-sm">Activities</p>
+          <p class="text-xs text-gray-500">Review &amp; build schedule</p>
+        </div>
       </a>
-      <a href="{{ base_url }}/schedule" class="block p-5 transition-colors hover:bg-indigo-50" style="border-right: 1px solid var(--rule-soft);">
-        <div class="smallcaps mb-1">Schedule</div>
-        <div class="font-display" style="color: var(--ink); font-size: 18px; font-variation-settings: 'opsz' 144, 'SOFT' 30, 'wght' 460;">See the full itinerary</div>
+      <a href="{{ base_url }}/schedule"
+         class="card card-hover p-4 flex items-center gap-3">
+        <span class="text-2xl leading-none">📋</span>
+        <div>
+          <p class="font-semibold text-gray-900 text-sm">Schedule</p>
+          <p class="text-xs text-gray-500">See the full itinerary</p>
+        </div>
       </a>
-      <a href="{{ base_url }}/expenses" class="block p-5 transition-colors hover:bg-indigo-50">
-        <div class="smallcaps mb-1">Expenses</div>
-        <div class="font-display" style="color: var(--ink); font-size: 18px; font-variation-settings: 'opsz' 144, 'SOFT' 30, 'wght' 460;">Track shared costs</div>
+      <a href="{{ base_url }}/expenses"
+         class="card card-hover p-4 flex items-center gap-3">
+        <span class="text-2xl leading-none">💸</span>
+        <div>
+          <p class="font-semibold text-gray-900 text-sm">Expenses</p>
+          <p class="text-xs text-gray-500">Track shared costs</p>
+        </div>
       </a>
     </div>
   </div>
@@ -361,39 +214,51 @@
   <!-- Today's schedule (current + upcoming only) -->
   <div class="mb-4">
     <div class="flex items-center justify-between mb-3">
-      <h2 class="smallcaps">Today's Schedule</h2>
+      <h2 class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Today's Schedule</h2>
       <div class="flex items-center gap-3">
-        <span class="inline-flex items-center gap-1.5 text-xs font-medium" style="color: var(--moss);">
-          <span class="w-2 h-2 rounded-full animate-pulse" style="background: var(--moss);"></span> Live
+        <span class="inline-flex items-center gap-1.5 text-xs text-green-600 font-medium">
+          <span class="w-2 h-2 rounded-full bg-green-400 animate-pulse"></span> Live
         </span>
-        <label class="flex items-center gap-1.5 text-xs cursor-pointer select-none" style="color: var(--ink-3);">
+        <label class="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer select-none">
           <input type="checkbox" id="use24h" onchange="toggle24h(this.checked)">
           24h
         </label>
-        <a href="{{ base_url }}/today" class="text-sm font-medium" style="color: var(--moss);">Full view →</a>
+        <a href="{{ base_url }}/today" class="text-sm text-indigo-600 hover:text-indigo-500 transition-colors font-medium">Full view →</a>
       </div>
     </div>
-    <div id="today-content" class="space-y-3" style="background: var(--surface); border: 1px solid var(--rule);">
-      <div class="text-center py-8" style="color: var(--ink-3);">
-        <div class="animate-spin inline-block w-5 h-5 rounded-full mb-2" style="border: 2px solid var(--moss); border-top-color: transparent;"></div>
-        <p class="text-sm font-display italic">Loading today's schedule…</p>
+    <div id="today-content" class="space-y-3">
+      <div class="text-center py-8 text-gray-400">
+        <div class="animate-spin inline-block w-5 h-5 border-2 border-indigo-400 border-t-transparent rounded-full mb-2"></div>
+        <p class="text-sm">Loading today's schedule…</p>
       </div>
     </div>
   </div>
 
   <!-- Quick actions -->
-  <div class="grid grid-cols-1 sm:grid-cols-3 gap-0" style="border: 1px solid var(--rule); background: var(--surface);">
-    <a href="{{ base_url }}/media" class="block p-5 transition-colors hover:bg-indigo-50" style="border-right: 1px solid var(--rule-soft);">
-      <div class="smallcaps mb-1">Photos</div>
-      <div class="font-display" style="color: var(--ink); font-size: 18px; font-variation-settings: 'opsz' 144, 'SOFT' 30, 'wght' 460;">Add &amp; share memories</div>
+  <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+    <a href="{{ base_url }}/media"
+       class="card card-hover p-4 flex items-center gap-3">
+      <span class="text-2xl leading-none">📷</span>
+      <div>
+        <p class="font-semibold text-gray-900 text-sm">Add Photos</p>
+        <p class="text-xs text-gray-500">Share memories</p>
+      </div>
     </a>
-    <a href="{{ base_url }}/schedule" class="block p-5 transition-colors hover:bg-indigo-50" style="border-right: 1px solid var(--rule-soft);">
-      <div class="smallcaps mb-1">Schedule</div>
-      <div class="font-display" style="color: var(--ink); font-size: 18px; font-variation-settings: 'opsz' 144, 'SOFT' 30, 'wght' 460;">Full itinerary &amp; sign-ups</div>
+    <a href="{{ base_url }}/schedule"
+       class="card card-hover p-4 flex items-center gap-3">
+      <span class="text-2xl leading-none">📋</span>
+      <div>
+        <p class="font-semibold text-gray-900 text-sm">Schedule</p>
+        <p class="text-xs text-gray-500">Full itinerary &amp; sign-ups</p>
+      </div>
     </a>
-    <a href="{{ base_url }}/expenses" class="block p-5 transition-colors hover:bg-indigo-50">
-      <div class="smallcaps mb-1">Expenses</div>
-      <div class="font-display" style="color: var(--ink); font-size: 18px; font-variation-settings: 'opsz' 144, 'SOFT' 30, 'wght' 460;">Track who paid what</div>
+    <a href="{{ base_url }}/expenses"
+       class="card card-hover p-4 flex items-center gap-3">
+      <span class="text-2xl leading-none">💸</span>
+      <div>
+        <p class="font-semibold text-gray-900 text-sm">Expenses</p>
+        <p class="text-xs text-gray-500">Track who paid what</p>
+      </div>
     </a>
   </div>
 
@@ -403,39 +268,52 @@
       <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
         <div>
           <div class="flex items-center gap-2 mb-1">
-            <span class="font-display" style="color: var(--ink); font-size: 18px; font-variation-settings: 'opsz' 144, 'SOFT' 30, 'wght' 460;">Reunion Survey</span>
-            <span id="survey-status" class="hidden text-xs px-2 py-0.5 font-medium"></span>
+            <span class="text-base font-semibold text-gray-900">📋 Reunion Survey</span>
+            <span id="survey-status" class="hidden text-xs px-2 py-0.5 rounded-full font-medium"></span>
           </div>
-          <p class="text-sm" style="color: var(--ink-3);">Share your thoughts on this year's reunion.</p>
+          <p class="text-sm text-gray-500">Share your thoughts on this year's reunion.</p>
         </div>
-        <a href="{{ base_url }}/survey" class="flex-shrink-0 btn-primary">
+        <a href="{{ base_url }}/survey"
+           class="flex-shrink-0 btn-primary px-4 py-2 text-sm rounded-lg">
           Take survey →
         </a>
       </div>
     </div>
 
     <!-- Quick actions -->
-    <div class="grid grid-cols-1 sm:grid-cols-3 gap-0" style="border: 1px solid var(--rule); background: var(--surface);">
-      <a href="{{ base_url }}/media" class="block p-5 transition-colors hover:bg-indigo-50" style="border-right: 1px solid var(--rule-soft);">
-        <div class="smallcaps mb-1">Photos</div>
-        <div class="font-display" style="color: var(--ink); font-size: 18px; font-variation-settings: 'opsz' 144, 'SOFT' 30, 'wght' 460;">Browse memories</div>
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <a href="{{ base_url }}/media"
+         class="card card-hover p-4 flex items-center gap-3">
+        <span class="text-2xl leading-none">📷</span>
+        <div>
+          <p class="font-semibold text-gray-900 text-sm">Photos</p>
+          <p class="text-xs text-gray-500">Browse memories</p>
+        </div>
       </a>
-      <a href="{{ base_url }}/expenses" class="block p-5 transition-colors hover:bg-indigo-50" style="border-right: 1px solid var(--rule-soft);">
-        <div class="smallcaps mb-1">Expenses</div>
-        <div class="font-display" style="color: var(--ink); font-size: 18px; font-variation-settings: 'opsz' 144, 'SOFT' 30, 'wght' 460;">Settle up</div>
+      <a href="{{ base_url }}/expenses"
+         class="card card-hover p-4 flex items-center gap-3">
+        <span class="text-2xl leading-none">💸</span>
+        <div>
+          <p class="font-semibold text-gray-900 text-sm">Expenses</p>
+          <p class="text-xs text-gray-500">Settle up</p>
+        </div>
       </a>
-      <a href="{{ base_url }}/activities" class="block p-5 transition-colors hover:bg-indigo-50">
-        <div class="smallcaps mb-1">Activities</div>
-        <div class="font-display" style="color: var(--ink); font-size: 18px; font-variation-settings: 'opsz' 144, 'SOFT' 30, 'wght' 460;">Look back</div>
+      <a href="{{ base_url }}/activities"
+         class="card card-hover p-4 flex items-center gap-3">
+        <span class="text-2xl leading-none">💡</span>
+        <div>
+          <p class="font-semibold text-gray-900 text-sm">Activities</p>
+          <p class="text-xs text-gray-500">Look back at what happened</p>
+        </div>
       </a>
     </div>
   </div>
 
 {% else %}
   <!-- Archived -->
-  <div class="card p-5 text-center py-12">
-    <p class="font-display italic mb-2" style="color: var(--ink-2); font-size: 18px;">This reunion is archived.</p>
-    <p class="text-sm" style="color: var(--ink-3);">Browse the memories in the tabs above.</p>
+  <div class="card p-5 text-center py-10">
+    <p class="text-2xl mb-2">🗃️</p>
+    <p class="text-gray-500">This reunion is archived. Browse the memories in the tabs above.</p>
   </div>
 {% endif %}
 
@@ -453,14 +331,10 @@
       el.classList.remove('hidden');
       if (done) {
         el.textContent = '✓ Done';
-        el.style.background = 'rgba(30,58,42,.12)';
-        el.style.color = 'var(--moss)';
-        el.style.border = '1px solid var(--moss)';
+        el.className = el.className.replace('hidden', '') + ' bg-green-100 text-green-700';
       } else {
         el.textContent = '⬜ Pending';
-        el.style.background = 'var(--bg-2)';
-        el.style.color = 'var(--ink-3)';
-        el.style.border = '1px solid var(--rule-soft)';
+        el.className = el.className.replace('hidden', '') + ' bg-gray-100 text-gray-500';
       }
     }
 
