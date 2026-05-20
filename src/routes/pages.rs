@@ -996,7 +996,7 @@ pub async fn dashboard(
     .bind(user.id)
     .fetch_all(state.db())
     .await
-    .unwrap_or_default();
+    .unwrap_or_else(|e| { tracing::warn!("pages.rs:{} db error (returning empty): {{e:?}}", line!()); Default::default() });
 
     let user_enrolled_ids: Vec<Uuid> = if let Some(fu_id) = user.family_unit_id {
         sqlx::query_scalar(
@@ -1016,9 +1016,9 @@ pub async fn dashboard(
     .bind(user.id)
     .fetch_all(state.db())
     .await
-    .unwrap_or_default();
+    .unwrap_or_else(|e| { tracing::warn!("pages.rs:{} db error (returning empty): {{e:?}}", line!()); Default::default() });
 
-    let all = Reunion::list_all(state.db()).await.unwrap_or_default();
+    let all = Reunion::list_all(state.db()).await?;
 
     // Filter to reunions accessible to this user.
     let accessible: Vec<&Reunion> = all.iter().filter(|r| {
@@ -1051,7 +1051,7 @@ pub async fn dashboard(
     )
     .fetch_all(state.db())
     .await
-    .unwrap_or_default();
+    .unwrap_or_else(|e| { tracing::warn!("pages.rs:{} db error (returning empty): {{e:?}}", line!()); Default::default() });
 
     let reunions: Vec<ReunionCardView> = accessible
         .into_iter()
@@ -1283,7 +1283,7 @@ pub async fn reunion_overview(
     .bind(reunion_id)
     .fetch_all(state.db())
     .await
-    .unwrap_or_default();
+    .unwrap_or_else(|e| { tracing::warn!("pages.rs:{} db error (returning empty): {{e:?}}", line!()); Default::default() });
     let ra_names = ra_name_list.join(", ");
 
     let selected_location_name = if let Some(loc_id) = reunion.selected_location_id {
@@ -1324,7 +1324,7 @@ pub async fn reunion_overview(
     .bind(user.id)
     .fetch_all(state.db())
     .await
-    .unwrap_or_default();
+    .unwrap_or_else(|e| { tracing::warn!("pages.rs:{} db error (returning empty): {{e:?}}", line!()); Default::default() });
 
     let top_activities: Vec<TopActivityPreview> = top_activity_rows
         .into_iter()
@@ -1383,8 +1383,7 @@ pub async fn availability_page(
     let is_ra = helpers::user_is_ra(&state, &user, reunion_id).await;
 
     let my_dates = Availability::for_user(state.db(), reunion_id, user.id)
-        .await
-        .unwrap_or_default();
+        .await?;
     let my_dates_json = serde_json::to_string(
         &my_dates.iter().map(|d| d.format("%Y-%m-%d").to_string()).collect::<Vec<_>>(),
     )
@@ -1418,8 +1417,7 @@ pub async fn availability_page(
             .await
             .unwrap_or(0);
         let entries = Availability::heatmap(state.db(), reunion_id)
-            .await
-            .unwrap_or_default();
+            .await?;
         let map: std::collections::HashMap<String, i64> = entries
             .into_iter()
             .map(|e| (e.available_date.format("%Y-%m-%d").to_string(), e.member_count))
@@ -1470,8 +1468,7 @@ pub async fn locations_page(
         );
 
     let candidates = LocationCandidate::list_for_reunion(state.db(), reunion_id)
-        .await
-        .unwrap_or_default();
+        .await?;
 
     let mut locations = Vec::new();
     for c in candidates {
@@ -1533,8 +1530,7 @@ pub async fn schedule_page(
     let is_ra = helpers::user_is_ra(&state, &user, reunion_id).await;
     let reunion_date = ReunionDate::find_for_reunion(state.db(), reunion_id).await.ok().flatten();
     let blocks = ScheduleBlock::list_for_reunion(state.db(), reunion_id)
-        .await
-        .unwrap_or_default();
+        .await?;
 
     // User's signup slot IDs — fetched once, used to annotate each slot
     let user_signup_slot_ids: std::collections::HashSet<Uuid> =
@@ -1549,13 +1545,11 @@ pub async fn schedule_page(
     let mut days: Vec<ScheduleDay> = Vec::new();
     for block in blocks {
         let slots_raw = SignupSlot::list_for_block(state.db(), block.id)
-            .await
-            .unwrap_or_default();
+            .await?;
         let mut slot_views = Vec::new();
         for slot in slots_raw {
             let signups = Signup::list_for_slot(state.db(), slot.id)
-                .await
-                .unwrap_or_default();
+                .await?;
             let signup_count = signups.len() as i32;
             let is_full = slot.max_count.map(|m| signup_count >= m).unwrap_or(false);
             let user_signed_up = user_signup_slot_ids.contains(&slot.id);
@@ -1632,8 +1626,7 @@ pub async fn activities_page(
         .flatten();
 
     let ideas = ActivityIdea::list_for_reunion(state.db(), reunion_id)
-        .await
-        .unwrap_or_default();
+        .await?;
 
     let mut activities = Vec::new();
     for idea in ideas {
@@ -1653,7 +1646,7 @@ pub async fn activities_page(
         .bind(idea.id)
         .fetch_all(state.db())
         .await
-        .unwrap_or_default();
+        .unwrap_or_else(|e| { tracing::warn!("pages.rs:{} db error (returning empty): {{e:?}}", line!()); Default::default() });
         let names_for = |role: &str| -> Vec<&str> {
             rsvp_rows
                 .iter()
@@ -1748,8 +1741,7 @@ pub async fn media_page(
     let is_ra = helpers::user_is_ra(&state, &user, reunion_id).await;
 
     let media = Media::list_for_reunion(state.db(), reunion_id)
-        .await
-        .unwrap_or_default();
+        .await?;
 
     Ok(MediaPage {
         user_name: user.display_name.clone(),
@@ -1777,9 +1769,8 @@ pub async fn expenses_page(
     let is_ra = helpers::user_is_ra(&state, &user, reunion_id).await;
 
     let expense_list = Expense::list_for_reunion(state.db(), reunion_id)
-        .await
-        .unwrap_or_default();
-    let all_users = User::list_all(state.db()).await.unwrap_or_default();
+        .await?;
+    let all_users = User::list_all(state.db()).await?;
 
     let expenses = expense_list
         .into_iter()
@@ -1797,18 +1788,15 @@ pub async fn expenses_page(
         .collect();
 
     let balance_data = Expense::balances_for_reunion(state.db(), reunion_id)
-        .await
-        .unwrap_or_default();
+        .await?;
 
     // Load family units enrolled in this reunion — used both for resolving
     // balance row names and for the split_among payload in the Add modal.
     let participating_unit_ids =
         crate::models::reunion::ReunionFamilyUnit::list_ids_for_reunion(state.db(), reunion_id)
-            .await
-            .unwrap_or_default();
+            .await?;
     let all_units = crate::models::user::FamilyUnit::list_all(state.db())
-        .await
-        .unwrap_or_default();
+        .await?;
     let family_units: Vec<FamilyUnitView> = participating_unit_ids
         .iter()
         .filter_map(|id| all_units.iter().find(|u| u.id == *id))
@@ -1871,12 +1859,10 @@ pub async fn survey_page(
     let is_ra = helpers::user_is_ra(&state, &user, reunion_id).await;
 
     let qs = SurveyQuestion::list_for_reunion(state.db(), reunion_id)
-        .await
-        .unwrap_or_default();
+        .await?;
     // Current user's own responses (may be multiple per question)
     let own_responses = SurveyResponse::list_for_user(state.db(), reunion_id, user.id)
-        .await
-        .unwrap_or_default();
+        .await?;
     // All responses with names — RA only
     let named_responses = if is_ra {
         SurveyResponse::list_for_reunion_with_names(state.db(), reunion_id)
@@ -1937,10 +1923,9 @@ pub async fn settings_page(
         return Err(Redirect::to(&format!("/reunions/{}", reunion_id)).into_response());
     }
     let flash = take_flash(&session).await;
-    let raw_family_units = FamilyUnit::list_all(state.db()).await.unwrap_or_default();
+    let raw_family_units = FamilyUnit::list_all(state.db()).await?;
     let enrolled_ids = ReunionFamilyUnit::list_ids_for_reunion(state.db(), reunion_id)
-        .await
-        .unwrap_or_default();
+        .await?;
     let family_units: Vec<FamilyUnitWithEnrolled> = raw_family_units
         .into_iter()
         .map(|fu| {
@@ -1949,9 +1934,8 @@ pub async fn settings_page(
         })
         .collect();
     let ra_ids = ReunionAdmin::list_ids_for_reunion(state.db(), reunion_id)
-        .await
-        .unwrap_or_default();
-    let all_users_raw = User::list_all(state.db()).await.unwrap_or_default();
+        .await?;
+    let all_users_raw = User::list_all(state.db()).await?;
     let all_users_with_ra: Vec<UserWithRaStatus> = all_users_raw
         .into_iter()
         .map(|u| {
@@ -1961,8 +1945,7 @@ pub async fn settings_page(
         .collect();
 
     let invites_raw = ReunionInvite::list_for_reunion(state.db(), reunion_id)
-        .await
-        .unwrap_or_default();
+        .await?;
     let base_url = &state.config().app_base_url;
     let invites: Vec<InviteWithUrl> = invites_raw
         .into_iter()
@@ -1972,8 +1955,7 @@ pub async fn settings_page(
         })
         .collect();
     let invite_members = ReunionInvite::list_members(state.db(), reunion_id)
-        .await
-        .unwrap_or_default();
+        .await?;
 
     Ok(SettingsPage {
         user_name: user.display_name.clone(),
@@ -1999,8 +1981,8 @@ pub async fn admin_page(
     let admin = require_sysadmin(&session, &state).await?;
     let flash = take_flash(&session).await;
 
-    let users = User::list_all(state.db()).await.unwrap_or_default();
-    let family_units = FamilyUnit::list_all(state.db()).await.unwrap_or_default();
+    let users = User::list_all(state.db()).await?;
+    let family_units = FamilyUnit::list_all(state.db()).await?;
 
     let (total_bytes, total_files): (Option<i64>, i64) = sqlx::query_as(
         "SELECT SUM(file_size_bytes), COUNT(*) FROM media",
@@ -2012,7 +1994,7 @@ pub async fn admin_page(
     let total_mb = format!("{:.1}", total_bytes.unwrap_or(0) as f64 / 1_048_576.0);
     let storage = StorageStatsView { total_files, total_mb };
 
-    let all_reunions = Reunion::list_all(state.db()).await.unwrap_or_default();
+    let all_reunions = Reunion::list_all(state.db()).await?;
 
     // Load all reunion_admins in one query
     let all_admin_rows: Vec<(Uuid, Uuid, String)> = sqlx::query_as(
@@ -2021,7 +2003,7 @@ pub async fn admin_page(
     )
     .fetch_all(state.db())
     .await
-    .unwrap_or_default();
+    .unwrap_or_else(|e| { tracing::warn!("pages.rs:{} db error (returning empty): {{e:?}}", line!()); Default::default() });
 
     let reunions: Vec<ReunionAdminView> = all_reunions
         .into_iter()

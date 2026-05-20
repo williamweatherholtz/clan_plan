@@ -63,4 +63,14 @@ impl IntoResponse for AppError {
     }
 }
 
+/// `From<AppError> for Response` so handlers that return `Result<Response,
+/// Response>` (the page-handler convention) can `?`-propagate AppError
+/// directly without an explicit `.map_err(IntoResponse::into_response)`.
+impl From<AppError> for Response {
+    fn from(e: AppError) -> Self {
+        e.into_response()
+    }
+}
+
+
 pub type AppResult<T> = Result<T, AppError>;

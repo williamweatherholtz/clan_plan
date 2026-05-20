@@ -291,8 +291,8 @@ async fn main() -> anyhow::Result<()> {
             HeaderValue::from_static(
                 "default-src 'self'; \
                  script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; \
-                 style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; \
-                 font-src 'self' https://fonts.gstatic.com; \
+                 style-src 'self' 'unsafe-inline'; \
+                 font-src 'self'; \
                  img-src 'self' data: https://lh3.googleusercontent.com https://avatars.githubusercontent.com; \
                  connect-src 'self'; \
                  frame-ancestors 'none'; \
