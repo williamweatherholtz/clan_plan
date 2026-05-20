@@ -66,7 +66,7 @@
                 Edit
               </button>
               <button
-                hx-delete="/reunions/{{ reunion.id }}/schedule/{{ b.block.id }}"
+                hx-delete="/api/reunions/{{ reunion.id }}/schedule/{{ b.block.id }}"
                 hx-target="#sched-block-{{ b.block.id }}"
                 hx-swap="delete"
                 hx-confirm="Remove this block from the schedule?"

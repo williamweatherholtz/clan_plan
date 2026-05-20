@@ -64,7 +64,7 @@
         <td class="px-4 py-3 text-gray-400">{{ e.expense.expense_date }}</td>
         {% if is_ra %}
         <td class="px-4 py-3">
-          <button hx-delete="/reunions/{{ reunion.id }}/expenses/{{ e.expense.id }}"
+          <button hx-delete="/api/reunions/{{ reunion.id }}/expenses/{{ e.expense.id }}"
                   hx-target="#exp-row-{{ e.expense.id }}"
                   hx-swap="delete"
                   hx-confirm="Delete this expense?"

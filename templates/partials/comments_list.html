@@ -15,7 +15,7 @@
     <span class="font-medium text-gray-700 text-xs">{{ c.display_name }}</span>
     <span class="text-gray-600 text-xs flex-1">{{ c.content }}</span>
     {% if c.is_mine %}
-    <button hx-delete="/reunions/{{ reunion_id }}/activities/{{ idea_id }}/comments/{{ c.id }}"
+    <button hx-delete="/api/reunions/{{ reunion_id }}/activities/{{ idea_id }}/comments/{{ c.id }}"
             hx-target="#cmt-{{ c.id }}"
             hx-swap="delete"
             hx-confirm="Delete this comment?"

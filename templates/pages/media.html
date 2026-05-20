@@ -54,7 +54,7 @@
     {% endif %}
     <!-- Delete button (visible on hover if authorized) -->
     {% if can_delete_media %}
-    <button hx-delete="/reunions/{{ reunion.id }}/media/{{ m.id }}"
+    <button hx-delete="/api/reunions/{{ reunion.id }}/media/{{ m.id }}"
             hx-target="#media-tile-{{ m.id }}"
             hx-swap="delete"
             hx-confirm="Delete this file?"

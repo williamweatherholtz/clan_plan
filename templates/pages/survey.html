@@ -30,7 +30,7 @@
     <div class="flex justify-between items-start mb-4">
       <h2 class="font-semibold text-gray-900">{{ q.question.question_text }}</h2>
       {% if is_ra %}
-      <button hx-delete="/reunions/{{ reunion.id }}/survey/questions/{{ q.question.id }}"
+      <button hx-delete="/api/reunions/{{ reunion.id }}/survey/questions/{{ q.question.id }}"
               hx-target="#survey-q-{{ q.question.id }}"
               hx-swap="delete"
               hx-confirm="Delete this question and all its responses?"
@@ -49,7 +49,7 @@
           <div class="flex gap-2 flex-shrink-0">
             <button onclick="startEdit('{{ resp.id }}')"
                     class="text-xs text-amber-600 hover:text-amber-800 font-medium">Edit</button>
-            <button hx-delete="/reunions/{{ reunion.id }}/survey/questions/{{ q.question.id }}/responses/{{ resp.id }}"
+            <button hx-delete="/api/reunions/{{ reunion.id }}/survey/questions/{{ q.question.id }}/responses/{{ resp.id }}"
                     hx-target="#survey-resp-{{ resp.id }}"
                     hx-swap="delete"
                     hx-confirm="Delete this response?"

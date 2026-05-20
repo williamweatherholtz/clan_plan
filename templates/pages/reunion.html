@@ -47,14 +47,14 @@
     </div>
     <div class="flex items-center gap-2">
       {% if let Some(prev_p) = reunion.phase.prev() %}
-      <button hx-post="/reunions/{{ reunion.id }}/retreat-phase"
+      <button hx-post="/api/reunions/{{ reunion.id }}/retreat-phase"
               hx-on::after-request="if (event.detail.successful) window.location.reload()"
               class="px-3 py-2 text-sm font-medium text-indigo-700 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors">
         ← {{ prev_p.label() }}
       </button>
       {% endif %}
       {% if let Some(next_p) = reunion.phase.next() %}
-      <button hx-post="/reunions/{{ reunion.id }}/advance-phase"
+      <button hx-post="/api/reunions/{{ reunion.id }}/advance-phase"
               hx-on::after-request="if (event.detail.successful) window.location.reload()"
               class="btn-primary px-4 py-2 text-sm rounded-lg">
         {{ next_p.label() }} →

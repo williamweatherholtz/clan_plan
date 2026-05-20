@@ -179,12 +179,12 @@
            returns the rendered partial via list_comments content-negotiation. -->
       <div id="comments-list-{{ a.idea.id }}"
            class="space-y-2 mb-3 text-sm"
-           hx-get="/reunions/{{ reunion.id }}/activities/{{ a.idea.id }}/comments"
+           hx-get="/api/reunions/{{ reunion.id }}/activities/{{ a.idea.id }}/comments"
            hx-trigger="revealed once"
            hx-swap="innerHTML">
         <p class="text-xs text-gray-400 italic">Loading comments…</p>
       </div>
-      <form hx-post="/reunions/{{ reunion.id }}/activities/{{ a.idea.id }}/comments"
+      <form hx-post="/api/reunions/{{ reunion.id }}/activities/{{ a.idea.id }}/comments"
             hx-target="#comments-list-{{ a.idea.id }}"
             hx-swap="innerHTML"
             hx-on::after-request="this.querySelector('input[name=content]').value = ''"
@@ -228,7 +228,7 @@
       </button>
 
       {% if is_ra %}
-        <button hx-patch="/reunions/{{ reunion.id }}/activities/{{ a.idea.id }}/status"
+        <button hx-patch="/api/reunions/{{ reunion.id }}/activities/{{ a.idea.id }}/status"
                 hx-ext="json-enc"
                 hx-vals='{"status":"cancelled"}'
                 hx-on::after-request="if (event.detail.successful) window.location.reload()"
@@ -237,7 +237,7 @@
         </button>
       {% endif %}
 
-      <button hx-delete="/reunions/{{ reunion.id }}/activities/{{ a.idea.id }}"
+      <button hx-delete="/api/reunions/{{ reunion.id }}/activities/{{ a.idea.id }}"
               hx-confirm="Delete this activity idea? This cannot be undone."
               hx-target="#act-card-{{ a.idea.id }}"
               hx-swap="delete"

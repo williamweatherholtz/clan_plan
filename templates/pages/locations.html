@@ -8,7 +8,7 @@
   {% if is_ra %}
   <div class="flex gap-2">
     {% if !votes_revealed %}
-    <button hx-post="/reunions/{{ reunion.id }}/locations/reveal"
+    <button hx-post="/api/reunions/{{ reunion.id }}/locations/reveal"
             hx-on::after-request="if (event.detail.successful) window.location.reload()"
             class="px-3 py-1.5 text-sm font-medium text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50">
       Reveal votes
@@ -144,13 +144,13 @@
         Edit
       </button>
       {% if !loc.selected %}
-      <button hx-post="/reunions/{{ reunion.id }}/locations/{{ loc.candidate.id }}/select"
+      <button hx-post="/api/reunions/{{ reunion.id }}/locations/{{ loc.candidate.id }}/select"
               hx-on::after-request="if (event.detail.successful) window.location.reload()"
               class="px-3 py-1 text-xs font-medium bg-green-500 text-white rounded-lg hover:bg-green-600">
         Select as winner
       </button>
       {% endif %}
-      <button hx-delete="/reunions/{{ reunion.id }}/locations/{{ loc.candidate.id }}"
+      <button hx-delete="/api/reunions/{{ reunion.id }}/locations/{{ loc.candidate.id }}"
               hx-target="#loc-card-{{ loc.candidate.id }}"
               hx-swap="delete"
               hx-confirm="Delete this location?"
