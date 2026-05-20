@@ -109,7 +109,13 @@ impl ReunionInvite {
     }
 
     /// List all members who joined a reunion via invite link.
-    pub async fn list_members(
+    /// Invite members who have NOT yet been placed in a family unit. The
+    /// settings page surfaces these under "Unassigned Members" so an RA can
+    /// route them. Once a user gets assigned to a family unit (admin →
+    /// family-unit-id setter), they're considered placed and drop off this
+    /// list — even though their `reunion_invite_members` row is kept (it
+    /// proves they joined this reunion before the assignment).
+    pub async fn list_unassigned_members(
         pool: &PgPool,
         reunion_id: Uuid,
     ) -> AppResult<Vec<InviteMember>> {
@@ -118,6 +124,7 @@ impl ReunionInvite {
                FROM reunion_invite_members rim
                JOIN users u ON u.id = rim.user_id
                WHERE rim.reunion_id = $1
+                 AND u.family_unit_id IS NULL
                ORDER BY rim.joined_at"#,
         )
         .bind(reunion_id)

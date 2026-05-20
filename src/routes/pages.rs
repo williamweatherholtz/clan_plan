@@ -2091,7 +2091,7 @@ pub async fn settings_page(
             InviteWithUrl { id: inv.id, join_url, created_at: inv.created_at }
         })
         .collect();
-    let invite_members = ReunionInvite::list_members(state.db(), reunion_id)
+    let invite_members = ReunionInvite::list_unassigned_members(state.db(), reunion_id)
         .await?;
 
     Ok(SettingsPage {
