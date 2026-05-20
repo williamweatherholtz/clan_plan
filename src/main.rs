@@ -290,7 +290,7 @@ async fn main() -> anyhow::Result<()> {
             axum::http::header::CONTENT_SECURITY_POLICY,
             HeaderValue::from_static(
                 "default-src 'self'; \
-                 script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; \
+                 script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline' 'unsafe-eval'; \
                  style-src 'self' 'unsafe-inline'; \
                  font-src 'self'; \
                  img-src 'self' data: https://lh3.googleusercontent.com https://avatars.githubusercontent.com; \
@@ -299,6 +299,11 @@ async fn main() -> anyhow::Result<()> {
                  base-uri 'self'; \
                  form-action 'self'",
             ),
+            // NOTE 'unsafe-eval' is required because Alpine.js's default cdn
+            // build uses `new Function()` to evaluate x-data / @click / x-show
+            // expressions. Switching to @alpinejs/csp would remove the need
+            // for it but requires rewriting every inline expression as
+            // Alpine.data(...) JS — tracked as a deferred follow-up.
         ));
 
     // Raise the body limit so multipart file uploads work.
