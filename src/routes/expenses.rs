@@ -14,7 +14,7 @@ use crate::{
     state::AppState,
 };
 
-use super::helpers::{ensure_ra, load_reunion};
+use super::helpers::{ensure_ra, load_reunion, load_reunion_for_api_member};
 
 // ── Response type ──────────────────────────────────────────────────────────────
 
@@ -28,11 +28,11 @@ pub struct ExpenseWithSplits {
 // ── GET /reunions/:id/expenses ────────────────────────────────────────────────
 
 pub async fn list_expenses(
-    _user: CurrentUser,
+    user: CurrentUser,
     State(state): State<AppState>,
     Path(reunion_id): Path<Uuid>,
 ) -> AppResult<impl IntoResponse> {
-    load_reunion(&state, reunion_id).await?;
+    load_reunion_for_api_member(&state, &user, reunion_id).await?;
 
     let expenses = Expense::list_for_reunion(state.db(), reunion_id).await?;
     let mut result = Vec::with_capacity(expenses.len());
@@ -52,7 +52,7 @@ pub async fn create_expense(
     Path(reunion_id): Path<Uuid>,
     Json(body): Json<NewExpense>,
 ) -> AppResult<impl IntoResponse> {
-    load_reunion(&state, reunion_id).await?;
+    load_reunion_for_api_member(&state, &user, reunion_id).await?;
 
     let expense = Expense::create(state.db(), reunion_id, user.id, body).await?;
     Ok((StatusCode::CREATED, Json(expense)))
@@ -66,7 +66,7 @@ pub async fn delete_expense(
     State(state): State<AppState>,
     Path((reunion_id, exp_id)): Path<(Uuid, Uuid)>,
 ) -> AppResult<StatusCode> {
-    load_reunion(&state, reunion_id).await?;
+    load_reunion_for_api_member(&state, &user, reunion_id).await?;
     ensure_ra(&user, &state, reunion_id).await?;
 
     let expense = Expense::find_by_id(state.db(), exp_id).await?;
@@ -81,11 +81,11 @@ pub async fn delete_expense(
 // ── GET /reunions/:id/expenses/balances ───────────────────────────────────────
 
 pub async fn get_balances(
-    _user: CurrentUser,
+    user: CurrentUser,
     State(state): State<AppState>,
     Path(reunion_id): Path<Uuid>,
 ) -> AppResult<impl IntoResponse> {
-    load_reunion(&state, reunion_id).await?;
+    load_reunion_for_api_member(&state, &user, reunion_id).await?;
     let balances = Expense::balances_for_reunion(state.db(), reunion_id).await?;
     Ok(Json(balances))
 }
@@ -93,11 +93,11 @@ pub async fn get_balances(
 // ── GET /reunions/:id/expenses/balances.csv ───────────────────────────────────
 
 pub async fn get_balances_csv(
-    _user: CurrentUser,
+    user: CurrentUser,
     State(state): State<AppState>,
     Path(reunion_id): Path<Uuid>,
 ) -> AppResult<impl IntoResponse> {
-    load_reunion(&state, reunion_id).await?;
+    load_reunion_for_api_member(&state, &user, reunion_id).await?;
     let balances = Expense::balances_for_reunion(state.db(), reunion_id).await?;
 
     let mut csv = String::from("family_unit_id,net_cents,net_dollars\n");
@@ -131,7 +131,7 @@ pub async fn confirm_expenses(
     State(state): State<AppState>,
     Path(reunion_id): Path<Uuid>,
 ) -> AppResult<StatusCode> {
-    load_reunion(&state, reunion_id).await?;
+    load_reunion_for_api_member(&state, &user, reunion_id).await?;
     sqlx::query(
         "INSERT INTO expense_confirmations (reunion_id, user_id)
          VALUES ($1, $2)

@@ -15,7 +15,7 @@ use crate::{
     state::AppState,
 };
 
-use super::helpers::{ensure_ra, load_reunion};
+use super::helpers::{ensure_ra, load_reunion, load_reunion_for_api_member};
 
 // ── GET /reunions/:id/feedback ────────────────────────────────────────────────
 // RA only — members submit anonymously (or at least, not broadcasted to them).
@@ -25,7 +25,7 @@ pub async fn list_feedback(
     State(state): State<AppState>,
     Path(reunion_id): Path<Uuid>,
 ) -> AppResult<impl IntoResponse> {
-    load_reunion(&state, reunion_id).await?;
+    load_reunion_for_api_member(&state, &user, reunion_id).await?;
     ensure_ra(&user, &state, reunion_id).await?;
 
     let items = Feedback::list_for_reunion(state.db(), reunion_id).await?;
@@ -46,7 +46,7 @@ pub async fn create_feedback(
     Path(reunion_id): Path<Uuid>,
     Json(body): Json<CreateFeedbackRequest>,
 ) -> AppResult<impl IntoResponse> {
-    let reunion = load_reunion(&state, reunion_id).await?;
+    let reunion = load_reunion_for_api_member(&state, &user, reunion_id).await?;
 
     if !matches!(reunion.phase, Phase::Active | Phase::PostReunion) {
         return Err(AppError::WrongPhase {
@@ -67,11 +67,11 @@ pub async fn create_feedback(
 // Visible to all members in post_reunion phase.
 
 pub async fn list_survey_questions(
-    _user: CurrentUser,
+    user: CurrentUser,
     State(state): State<AppState>,
     Path(reunion_id): Path<Uuid>,
 ) -> AppResult<impl IntoResponse> {
-    load_reunion(&state, reunion_id).await?;
+    load_reunion_for_api_member(&state, &user, reunion_id).await?;
     let questions = SurveyQuestion::list_for_reunion(state.db(), reunion_id).await?;
     Ok(Json(questions))
 }
@@ -85,7 +85,7 @@ pub async fn create_survey_question(
     Path(reunion_id): Path<Uuid>,
     Json(body): Json<NewSurveyQuestion>,
 ) -> AppResult<impl IntoResponse> {
-    load_reunion(&state, reunion_id).await?;
+    load_reunion_for_api_member(&state, &user, reunion_id).await?;
     ensure_ra(&user, &state, reunion_id).await?;
 
     if body.question_text.trim().is_empty() {
@@ -104,7 +104,7 @@ pub async fn delete_survey_question(
     State(state): State<AppState>,
     Path((reunion_id, q_id)): Path<(Uuid, Uuid)>,
 ) -> AppResult<StatusCode> {
-    load_reunion(&state, reunion_id).await?;
+    load_reunion_for_api_member(&state, &user, reunion_id).await?;
     ensure_ra(&user, &state, reunion_id).await?;
 
     SurveyQuestion::delete(state.db(), q_id).await?;
@@ -125,7 +125,7 @@ pub async fn create_survey_response(
     Path((reunion_id, q_id)): Path<(Uuid, Uuid)>,
     Json(body): Json<SurveyResponseRequest>,
 ) -> AppResult<impl IntoResponse> {
-    load_reunion(&state, reunion_id).await?;
+    load_reunion_for_api_member(&state, &user, reunion_id).await?;
 
     if body.response_text.trim().is_empty() {
         return Err(AppError::BadRequest("response_text cannot be empty".into()));
@@ -145,7 +145,7 @@ pub async fn update_survey_response(
     Path((reunion_id, _q_id, r_id)): Path<(Uuid, Uuid, Uuid)>,
     Json(body): Json<SurveyResponseRequest>,
 ) -> AppResult<impl IntoResponse> {
-    load_reunion(&state, reunion_id).await?;
+    load_reunion_for_api_member(&state, &user, reunion_id).await?;
 
     if body.response_text.trim().is_empty() {
         return Err(AppError::BadRequest("response_text cannot be empty".into()));
@@ -168,7 +168,7 @@ pub async fn delete_survey_response(
     State(state): State<AppState>,
     Path((reunion_id, _q_id, r_id)): Path<(Uuid, Uuid, Uuid)>,
 ) -> AppResult<StatusCode> {
-    load_reunion(&state, reunion_id).await?;
+    load_reunion_for_api_member(&state, &user, reunion_id).await?;
 
     let deleted = SurveyResponse::delete(state.db(), r_id, user.id).await?;
     if deleted {
@@ -193,7 +193,7 @@ pub async fn list_survey_responses(
     State(state): State<AppState>,
     Path(reunion_id): Path<Uuid>,
 ) -> AppResult<impl IntoResponse> {
-    load_reunion(&state, reunion_id).await?;
+    load_reunion_for_api_member(&state, &user, reunion_id).await?;
     ensure_ra(&user, &state, reunion_id).await?;
 
     let questions = SurveyQuestion::list_for_reunion(state.db(), reunion_id).await?;

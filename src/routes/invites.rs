@@ -14,7 +14,7 @@ use crate::{
     state::AppState,
 };
 
-use super::helpers::{ensure_ra, load_reunion};
+use super::helpers::{ensure_ra, load_reunion, load_reunion_for_api_member};
 
 // ── POST /reunions/:id/invites ─────────────────────────────────────────────────
 
@@ -23,7 +23,7 @@ pub async fn create_invite(
     State(state): State<AppState>,
     Path(reunion_id): Path<Uuid>,
 ) -> AppResult<impl IntoResponse> {
-    load_reunion(&state, reunion_id).await?;
+    load_reunion_for_api_member(&state, &user, reunion_id).await?;
     ensure_ra(&user, &state, reunion_id).await?;
 
     let invite = ReunionInvite::create(state.db(), reunion_id, user.id).await?;
@@ -49,7 +49,7 @@ pub async fn revoke_invite(
     State(state): State<AppState>,
     Path((reunion_id, invite_id)): Path<(Uuid, Uuid)>,
 ) -> AppResult<impl IntoResponse> {
-    load_reunion(&state, reunion_id).await?;
+    load_reunion_for_api_member(&state, &user, reunion_id).await?;
     ensure_ra(&user, &state, reunion_id).await?;
 
     ReunionInvite::deactivate(state.db(), invite_id, reunion_id).await?;
@@ -63,7 +63,7 @@ pub async fn remove_invite_member(
     State(state): State<AppState>,
     Path((reunion_id, target_user_id)): Path<(Uuid, Uuid)>,
 ) -> AppResult<impl IntoResponse> {
-    load_reunion(&state, reunion_id).await?;
+    load_reunion_for_api_member(&state, &user, reunion_id).await?;
     ensure_ra(&user, &state, reunion_id).await?;
 
     ReunionInvite::remove_member(state.db(), reunion_id, target_user_id).await?;

@@ -19,7 +19,7 @@ use crate::{
     state::AppState,
 };
 
-use super::helpers::{load_reunion, user_is_ra};
+use super::helpers::{load_reunion, load_reunion_for_api_member, user_is_ra};
 
 // ── POST /reunions/:id/media ──────────────────────────────────────────────────
 
@@ -29,7 +29,7 @@ pub async fn upload_media(
     Path(reunion_id): Path<Uuid>,
     mut multipart: Multipart,
 ) -> AppResult<impl IntoResponse> {
-    load_reunion(&state, reunion_id).await?;
+    load_reunion_for_api_member(&state, &user, reunion_id).await?;
 
     let mut original_filename: Option<String> = None;
     let mut file_bytes: Option<Vec<u8>> = None;
@@ -104,11 +104,11 @@ pub async fn upload_media(
 // ── GET /reunions/:id/media ───────────────────────────────────────────────────
 
 pub async fn list_media(
-    _user: CurrentUser,
+    user: CurrentUser,
     State(state): State<AppState>,
     Path(reunion_id): Path<Uuid>,
 ) -> AppResult<impl IntoResponse> {
-    load_reunion(&state, reunion_id).await?;
+    load_reunion_for_api_member(&state, &user, reunion_id).await?;
     let items = Media::list_for_reunion(state.db(), reunion_id).await?;
     Ok(Json(items))
 }
@@ -116,11 +116,11 @@ pub async fn list_media(
 // ── GET /reunions/:id/media/:media_id ────────────────────────────────────────
 
 pub async fn download_media(
-    _user: CurrentUser,
+    user: CurrentUser,
     State(state): State<AppState>,
     Path((reunion_id, media_id)): Path<(Uuid, Uuid)>,
 ) -> AppResult<impl IntoResponse> {
-    load_reunion(&state, reunion_id).await?;
+    load_reunion_for_api_member(&state, &user, reunion_id).await?;
     let media = Media::find_by_id(state.db(), media_id).await?;
     if media.reunion_id != reunion_id {
         return Err(AppError::NotFound);
@@ -152,7 +152,7 @@ pub async fn delete_media(
     State(state): State<AppState>,
     Path((reunion_id, media_id)): Path<(Uuid, Uuid)>,
 ) -> AppResult<StatusCode> {
-    load_reunion(&state, reunion_id).await?;
+    load_reunion_for_api_member(&state, &user, reunion_id).await?;
     let media = Media::find_by_id(state.db(), media_id).await?;
     if media.reunion_id != reunion_id {
         return Err(AppError::NotFound);
@@ -181,11 +181,11 @@ pub async fn delete_media(
 // ── GET /reunions/:id/media/download-all ─────────────────────────────────────
 
 pub async fn download_all_zip(
-    _user: CurrentUser,
+    user: CurrentUser,
     State(state): State<AppState>,
     Path(reunion_id): Path<Uuid>,
 ) -> AppResult<impl IntoResponse> {
-    let reunion = load_reunion(&state, reunion_id).await?;
+    let reunion = load_reunion_for_api_member(&state, &user, reunion_id).await?;
     let items = Media::list_for_reunion(state.db(), reunion_id).await?;
 
     let storage_root_str = state.config().media_storage_path.clone();

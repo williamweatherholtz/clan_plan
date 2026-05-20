@@ -20,7 +20,7 @@ use crate::{
     state::AppState,
 };
 
-use super::helpers::{ensure_ra, load_reunion};
+use super::helpers::{ensure_ra, load_reunion, load_reunion_for_api_member};
 
 // ── Response types ─────────────────────────────────────────────────────────────
 
@@ -58,7 +58,7 @@ pub struct SetDatesRequest {
 // ── GET /reunions ──────────────────────────────────────────────────────────────
 
 pub async fn list_reunions(
-    _user: CurrentUser,
+    user: CurrentUser,
     State(state): State<AppState>,
 ) -> AppResult<impl IntoResponse> {
     let reunions = Reunion::list_all(state.db()).await?;
@@ -86,11 +86,11 @@ pub async fn create_reunion(
 // ── GET /reunions/:id ──────────────────────────────────────────────────────────
 
 pub async fn get_reunion(
-    _user: CurrentUser,
+    user: CurrentUser,
     State(state): State<AppState>,
     Path(reunion_id): Path<Uuid>,
 ) -> AppResult<impl IntoResponse> {
-    let reunion = load_reunion(&state, reunion_id).await?;
+    let reunion = load_reunion_for_api_member(&state, &user, reunion_id).await?;
     let dates = ReunionDate::find_for_reunion(state.db(), reunion_id).await?;
     Ok(Json(ReunionDetail { reunion, dates }))
 }
@@ -103,7 +103,7 @@ pub async fn update_reunion(
     Path(reunion_id): Path<Uuid>,
     Json(body): Json<UpdateReunionRequest>,
 ) -> AppResult<impl IntoResponse> {
-    let reunion = load_reunion(&state, reunion_id).await?;
+    let reunion = load_reunion_for_api_member(&state, &user, reunion_id).await?;
     ensure_ra(&user, &state, reunion_id).await?;
 
     let title = body.title.as_deref().unwrap_or(&reunion.title);
@@ -149,7 +149,7 @@ pub async fn advance_phase(
     State(state): State<AppState>,
     Path(reunion_id): Path<Uuid>,
 ) -> AppResult<impl IntoResponse> {
-    let reunion = load_reunion(&state, reunion_id).await?;
+    let reunion = load_reunion_for_api_member(&state, &user, reunion_id).await?;
     ensure_ra(&user, &state, reunion_id).await?;
 
     // Dates must be set before moving from Availability to Locations/Schedule.
@@ -209,7 +209,7 @@ pub async fn retreat_phase(
     State(state): State<AppState>,
     Path(reunion_id): Path<Uuid>,
 ) -> AppResult<impl IntoResponse> {
-    let reunion = load_reunion(&state, reunion_id).await?;
+    let reunion = load_reunion_for_api_member(&state, &user, reunion_id).await?;
     ensure_ra(&user, &state, reunion_id).await?;
 
     let prev = reunion.phase.retreat()?;
@@ -228,7 +228,7 @@ pub async fn set_dates(
     Path(reunion_id): Path<Uuid>,
     Json(body): Json<SetDatesRequest>,
 ) -> AppResult<impl IntoResponse> {
-    let reunion = load_reunion(&state, reunion_id).await?;
+    let reunion = load_reunion_for_api_member(&state, &user, reunion_id).await?;
     ensure_ra(&user, &state, reunion_id).await?;
 
     // Dates can be set at any non-archived phase — RA may need to enter dates
@@ -262,7 +262,7 @@ pub async fn unarchive(
     State(state): State<AppState>,
     Path(reunion_id): Path<Uuid>,
 ) -> AppResult<impl IntoResponse> {
-    let reunion = load_reunion(&state, reunion_id).await?;
+    let reunion = load_reunion_for_api_member(&state, &user, reunion_id).await?;
     ensure_ra(&user, &state, reunion_id).await?;
     if reunion.phase != Phase::Archived {
         return Err(AppError::BadRequest("reunion is not archived".into()));
@@ -278,7 +278,7 @@ pub async fn delete_reunion(
     State(state): State<AppState>,
     Path(reunion_id): Path<Uuid>,
 ) -> AppResult<impl IntoResponse> {
-    let reunion = load_reunion(&state, reunion_id).await?;
+    let reunion = load_reunion_for_api_member(&state, &user, reunion_id).await?;
     // Only sysadmin may delete; RA can only archive
     if !user.is_sysadmin() {
         return Err(AppError::Forbidden);
@@ -345,11 +345,11 @@ pub async fn my_completion(
 // ── GET /reunions/:id/family-units ────────────────────────────────────────────
 
 pub async fn list_reunion_family_units(
-    _user: CurrentUser,
+    user: CurrentUser,
     State(state): State<AppState>,
     Path(reunion_id): Path<Uuid>,
 ) -> AppResult<impl IntoResponse> {
-    load_reunion(&state, reunion_id).await?;
+    load_reunion_for_api_member(&state, &user, reunion_id).await?;
     let ids = ReunionFamilyUnit::list_ids_for_reunion(state.db(), reunion_id).await?;
     let all_units = FamilyUnit::list_all(state.db()).await?;
     let units: Vec<FamilyUnit> = all_units.into_iter().filter(|u| ids.contains(&u.id)).collect();
@@ -363,7 +363,7 @@ pub async fn add_reunion_family_unit(
     State(state): State<AppState>,
     Path((reunion_id, fu_id)): Path<(Uuid, Uuid)>,
 ) -> AppResult<StatusCode> {
-    load_reunion(&state, reunion_id).await?;
+    load_reunion_for_api_member(&state, &user, reunion_id).await?;
     super::helpers::ensure_ra(&user, &state, reunion_id).await?;
     // Verify the family unit exists
     FamilyUnit::find_by_id(state.db(), fu_id).await?;
@@ -378,7 +378,7 @@ pub async fn remove_reunion_family_unit(
     State(state): State<AppState>,
     Path((reunion_id, fu_id)): Path<(Uuid, Uuid)>,
 ) -> AppResult<StatusCode> {
-    load_reunion(&state, reunion_id).await?;
+    load_reunion_for_api_member(&state, &user, reunion_id).await?;
     super::helpers::ensure_ra(&user, &state, reunion_id).await?;
     ReunionFamilyUnit::remove(state.db(), reunion_id, fu_id).await?;
     Ok(StatusCode::NO_CONTENT)
@@ -400,11 +400,11 @@ pub struct SetupProgressResponse {
 }
 
 pub async fn setup_progress(
-    _user: CurrentUser,
+    user: CurrentUser,
     State(state): State<AppState>,
     Path(reunion_id): Path<Uuid>,
 ) -> AppResult<impl IntoResponse> {
-    load_reunion(&state, reunion_id).await?;
+    load_reunion_for_api_member(&state, &user, reunion_id).await?;
 
     let total: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM reunion_family_units WHERE reunion_id = $1",

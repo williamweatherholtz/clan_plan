@@ -1,8 +1,15 @@
-use axum::response::{IntoResponse, Redirect, Response};
+use axum::{
+    async_trait,
+    extract::{FromRef, FromRequestParts, Path},
+    http::request::Parts,
+    response::{IntoResponse, Redirect, Response},
+};
 use sqlx::PgPool;
+use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::{
+    auth::session::CurrentUser,
     error::{AppError, AppResult},
     models::{
         location::LocationCandidate,
@@ -14,8 +21,110 @@ use crate::{
 };
 
 /// Load a reunion by ID or return 404.
+///
+/// **This does NOT authorize.** It just resolves the UUID to a row. Use
+/// `load_reunion_for_api_member` (JSON routes) or `load_reunion_for_member`
+/// (HTML page routes) at the route boundary to gate access. The bare
+/// `load_reunion` only remains for the handful of helpers that legitimately
+/// need a Reunion without an associated user (e.g. background
+/// `maybe_auto_activate`).
 pub async fn load_reunion(state: &AppState, id: Uuid) -> AppResult<Reunion> {
     Reunion::find_by_id(state.db(), id).await
+}
+
+/// Load a reunion and verify the user has member-level access. For use in
+/// JSON API handlers — returns `AppError::Forbidden` on access denial (HTML
+/// page handlers should use `load_reunion_for_member` instead, which
+/// redirects).
+pub async fn load_reunion_for_api_member(
+    state: &AppState,
+    user: &User,
+    reunion_id: Uuid,
+) -> AppResult<Reunion> {
+    let reunion = Reunion::find_by_id(state.db(), reunion_id).await?;
+    if !user_is_reunion_member(state, user, &reunion).await {
+        return Err(AppError::Forbidden);
+    }
+    Ok(reunion)
+}
+
+// ── Authorization extractors ────────────────────────────────────────────────
+//
+// `ReunionMember` resolves the `:id` path param to a Reunion, loads the
+// CurrentUser, and rejects with Forbidden if the user is not a member.
+// `ReunionRa` layers an RA check on top. Use one of these in every route
+// handler under `/api/reunions/:id/...` — never `load_reunion(...).await?`
+// at the route boundary alone.
+
+/// Member-level access to a reunion. The `:id` path param is read by name
+/// (so this composes with handlers that take additional `Path<(...)>` for
+/// nested IDs like `:act_id` / `:exp_id`).
+pub struct ReunionMember {
+    pub user: User,
+    pub reunion: Reunion,
+    pub is_ra: bool,
+}
+
+async fn reunion_id_from_path<S>(parts: &mut Parts, state: &S) -> AppResult<Uuid>
+where
+    S: Send + Sync,
+{
+    let Path(params): Path<HashMap<String, String>> = Path::from_request_parts(parts, state)
+        .await
+        .map_err(|_| AppError::BadRequest("missing path params".into()))?;
+    let id_str = params
+        .get("id")
+        .ok_or_else(|| AppError::BadRequest("missing :id path param".into()))?;
+    id_str
+        .parse::<Uuid>()
+        .map_err(|_| AppError::BadRequest("invalid uuid in :id path param".into()))
+}
+
+#[async_trait]
+impl<S> FromRequestParts<S> for ReunionMember
+where
+    S: Send + Sync,
+    AppState: FromRef<S>,
+{
+    type Rejection = AppError;
+
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+        let CurrentUser(user) = CurrentUser::from_request_parts(parts, state).await?;
+        let app_state = AppState::from_ref(state);
+
+        let reunion_id = reunion_id_from_path(parts, state).await?;
+        let reunion = Reunion::find_by_id(app_state.db(), reunion_id).await?;
+
+        if !user_is_reunion_member(&app_state, &user, &reunion).await {
+            return Err(AppError::Forbidden);
+        }
+
+        let is_ra = user_is_ra(&app_state, &user, reunion.id).await;
+
+        Ok(ReunionMember { user, reunion, is_ra })
+    }
+}
+
+/// RA-or-sysadmin access to a reunion. Wraps `ReunionMember` with an extra
+/// `is_ra` gate. Use `let ReunionRa(ctx) = ...;` to access the inner user
+/// and reunion.
+pub struct ReunionRa(pub ReunionMember);
+
+#[async_trait]
+impl<S> FromRequestParts<S> for ReunionRa
+where
+    S: Send + Sync,
+    AppState: FromRef<S>,
+{
+    type Rejection = AppError;
+
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+        let member = ReunionMember::from_request_parts(parts, state).await?;
+        if !member.is_ra {
+            return Err(AppError::Forbidden);
+        }
+        Ok(ReunionRa(member))
+    }
 }
 
 /// Returns true if the user is a sysadmin or listed as an RA for this reunion.

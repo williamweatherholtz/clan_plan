@@ -24,7 +24,7 @@ use crate::{
 };
 
 use super::{
-    helpers::{get_reunion_tz_string, load_reunion, meal_rsvp_names_for_block},
+    helpers::{get_reunion_tz_string, load_reunion, load_reunion_for_api_member, meal_rsvp_names_for_block},
     schedule::{BlockWithSlots, SlotWithSignups},
 };
 
@@ -40,11 +40,11 @@ struct TodaySnapshot {
 }
 
 pub async fn get_today(
-    _user: CurrentUser,
+    user: CurrentUser,
     State(state): State<AppState>,
     Path(reunion_id): Path<Uuid>,
 ) -> AppResult<impl IntoResponse> {
-    let reunion = load_reunion(&state, reunion_id).await?;
+    let reunion = load_reunion_for_api_member(&state, &user, reunion_id).await?;
     let tz_str = get_reunion_tz_string(&state, &reunion).await;
     let tz: Tz = tz_str.parse().unwrap_or(chrono_tz::UTC);
 
@@ -80,11 +80,11 @@ pub async fn get_today(
 //    universally accepted and needs no VTIMEZONE component.
 
 pub async fn get_ics(
-    _user: CurrentUser,
+    user: CurrentUser,
     State(state): State<AppState>,
     Path(reunion_id): Path<Uuid>,
 ) -> AppResult<impl IntoResponse> {
-    let reunion = load_reunion(&state, reunion_id).await?;
+    let reunion = load_reunion_for_api_member(&state, &user, reunion_id).await?;
     let blocks = ScheduleBlock::list_for_reunion(state.db(), reunion_id).await?;
     let tz_str = get_reunion_tz_string(&state, &reunion).await;
     let tz: Tz = tz_str.parse().unwrap_or(chrono_tz::UTC);

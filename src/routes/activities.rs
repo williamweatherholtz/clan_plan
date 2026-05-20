@@ -17,7 +17,7 @@ use crate::{
     state::AppState,
 };
 
-use super::helpers::{ensure_member, load_reunion, user_is_ra};
+use super::helpers::{ensure_member, load_reunion, load_reunion_for_api_member, user_is_ra};
 
 // ── Response types ─────────────────────────────────────────────────────────────
 
@@ -32,11 +32,11 @@ pub struct ActivityIdeaView {
 // ── GET /reunions/:id/activities ──────────────────────────────────────────────
 
 pub async fn list_activities(
-    _user: CurrentUser,
+    user: CurrentUser,
     State(state): State<AppState>,
     Path(reunion_id): Path<Uuid>,
 ) -> AppResult<impl IntoResponse> {
-    load_reunion(&state, reunion_id).await?;
+    load_reunion_for_api_member(&state, &user, reunion_id).await?;
 
     let ideas = ActivityIdea::list_for_reunion(state.db(), reunion_id).await?;
     let summaries = ActivityIdea::summaries_for_reunion(state.db(), reunion_id).await?;
@@ -64,7 +64,7 @@ pub async fn create_activity(
     Path(reunion_id): Path<Uuid>,
     Json(body): Json<NewActivityIdea>,
 ) -> AppResult<impl IntoResponse> {
-    load_reunion(&state, reunion_id).await?;
+    load_reunion_for_api_member(&state, &user, reunion_id).await?;
 
     if body.title.trim().is_empty() {
         return Err(AppError::BadRequest("title cannot be empty".into()));
@@ -91,7 +91,7 @@ pub async fn update_activity(
     Path((reunion_id, act_id)): Path<(Uuid, Uuid)>,
     Json(body): Json<PatchActivityIdea>,
 ) -> AppResult<impl IntoResponse> {
-    load_reunion(&state, reunion_id).await?;
+    load_reunion_for_api_member(&state, &user, reunion_id).await?;
 
     if body.title.trim().is_empty() {
         return Err(AppError::BadRequest("title cannot be empty".into()));
@@ -134,7 +134,7 @@ pub async fn create_comment(
     Path((reunion_id, act_id)): Path<(Uuid, Uuid)>,
     Json(body): Json<CommentRequest>,
 ) -> AppResult<impl IntoResponse> {
-    load_reunion(&state, reunion_id).await?;
+    load_reunion_for_api_member(&state, &user, reunion_id).await?;
 
     if body.content.trim().is_empty() {
         return Err(AppError::BadRequest("comment cannot be empty".into()));
@@ -160,7 +160,7 @@ pub async fn delete_comment(
     State(state): State<AppState>,
     Path((reunion_id, _act_id, cmt_id)): Path<(Uuid, Uuid, Uuid)>,
 ) -> AppResult<StatusCode> {
-    load_reunion(&state, reunion_id).await?;
+    load_reunion_for_api_member(&state, &user, reunion_id).await?;
     let is_admin = user_is_ra(&state, &user, reunion_id).await;
 
     ActivityComment::delete(state.db(), cmt_id, user.id, is_admin).await?;
@@ -177,7 +177,7 @@ pub async fn update_comment(
     Path((reunion_id, _act_id, cmt_id)): Path<(Uuid, Uuid, Uuid)>,
     Json(body): Json<CommentRequest>,
 ) -> AppResult<impl IntoResponse> {
-    load_reunion(&state, reunion_id).await?;
+    load_reunion_for_api_member(&state, &user, reunion_id).await?;
 
     if body.content.trim().is_empty() {
         return Err(AppError::BadRequest("comment cannot be empty".into()));
@@ -206,7 +206,7 @@ pub async fn set_status(
     Path((reunion_id, act_id)): Path<(Uuid, Uuid)>,
     Json(body): Json<SetStatusRequest>,
 ) -> AppResult<impl IntoResponse> {
-    load_reunion(&state, reunion_id).await?;
+    load_reunion_for_api_member(&state, &user, reunion_id).await?;
 
     let idea = ActivityIdea::find_by_id(state.db(), act_id).await?;
     if idea.reunion_id != reunion_id {
@@ -262,7 +262,7 @@ pub async fn promote_activity(
     Path((reunion_id, act_id)): Path<(Uuid, Uuid)>,
     Json(body): Json<PromoteRequest>,
 ) -> AppResult<impl IntoResponse> {
-    let reunion = load_reunion(&state, reunion_id).await?;
+    let reunion = load_reunion_for_api_member(&state, &user, reunion_id).await?;
     ensure_member(&user, &state, &reunion).await?;
 
     let idea = ActivityIdea::find_by_id(state.db(), act_id).await?;
@@ -294,7 +294,7 @@ pub async fn delete_activity(
     State(state): State<AppState>,
     Path((reunion_id, act_id)): Path<(Uuid, Uuid)>,
 ) -> AppResult<StatusCode> {
-    load_reunion(&state, reunion_id).await?;
+    load_reunion_for_api_member(&state, &user, reunion_id).await?;
 
     let idea = ActivityIdea::find_by_id(state.db(), act_id).await?;
     if idea.reunion_id != reunion_id {
@@ -343,7 +343,7 @@ pub async fn list_comments(
     State(state): State<AppState>,
     Path((reunion_id, act_id)): Path<(Uuid, Uuid)>,
 ) -> AppResult<impl IntoResponse> {
-    load_reunion(&state, reunion_id).await?;
+    load_reunion_for_api_member(&state, &user, reunion_id).await?;
 
     let idea = ActivityIdea::find_by_id(state.db(), act_id).await?;
     if idea.reunion_id != reunion_id {
@@ -399,7 +399,7 @@ pub async fn rsvp_activity(
     Path((reunion_id, act_id)): Path<(Uuid, Uuid)>,
     Query(q): Query<RsvpQuery>,
 ) -> AppResult<StatusCode> {
-    load_reunion(&state, reunion_id).await?;
+    load_reunion_for_api_member(&state, &user, reunion_id).await?;
     let idea = ActivityIdea::find_by_id(state.db(), act_id).await?;
     if idea.reunion_id != reunion_id {
         return Err(AppError::NotFound);
@@ -425,7 +425,7 @@ pub async fn unrsvp_activity(
     Path((reunion_id, act_id)): Path<(Uuid, Uuid)>,
     Query(q): Query<RsvpQuery>,
 ) -> AppResult<StatusCode> {
-    load_reunion(&state, reunion_id).await?;
+    load_reunion_for_api_member(&state, &user, reunion_id).await?;
     let role = q.role.as_deref().unwrap_or("in");
     if !matches!(role, "in" | "make" | "cleanup") {
         return Err(AppError::BadRequest("invalid role".into()));

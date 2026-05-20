@@ -19,7 +19,7 @@ use crate::{
     state::AppState,
 };
 
-use super::helpers::{ensure_member, ensure_ra, load_reunion, user_is_ra};
+use super::helpers::{ensure_member, ensure_ra, load_reunion, load_reunion_for_api_member, user_is_ra};
 
 // ── Response types ─────────────────────────────────────────────────────────────
 
@@ -41,11 +41,11 @@ pub struct BlockWithSlots {
 // ── GET /reunions/:id/schedule ─────────────────────────────────────────────────
 
 pub async fn get_schedule(
-    _user: CurrentUser,
+    user: CurrentUser,
     State(state): State<AppState>,
     Path(reunion_id): Path<Uuid>,
 ) -> AppResult<impl IntoResponse> {
-    load_reunion(&state, reunion_id).await?;
+    load_reunion_for_api_member(&state, &user, reunion_id).await?;
 
     let blocks = ScheduleBlock::list_for_reunion(state.db(), reunion_id).await?;
     let mut result: Vec<BlockWithSlots> = Vec::with_capacity(blocks.len());
@@ -82,7 +82,7 @@ pub async fn create_block(
     Path(reunion_id): Path<Uuid>,
     Json(body): Json<NewScheduleBlock>,
 ) -> AppResult<impl IntoResponse> {
-    let reunion = load_reunion(&state, reunion_id).await?;
+    let reunion = load_reunion_for_api_member(&state, &user, reunion_id).await?;
     ensure_member(&user, &state, &reunion).await?;
 
     if body.end_time <= body.start_time {
@@ -103,7 +103,7 @@ pub async fn update_block(
     Path((reunion_id, block_id)): Path<(Uuid, Uuid)>,
     Json(body): Json<NewScheduleBlock>,
 ) -> AppResult<impl IntoResponse> {
-    load_reunion(&state, reunion_id).await?;
+    load_reunion_for_api_member(&state, &user, reunion_id).await?;
 
     let block = ScheduleBlock::find_by_id(state.db(), block_id).await?;
     if block.reunion_id != reunion_id {
@@ -150,7 +150,7 @@ pub async fn delete_block(
     State(state): State<AppState>,
     Path((reunion_id, block_id)): Path<(Uuid, Uuid)>,
 ) -> AppResult<StatusCode> {
-    load_reunion(&state, reunion_id).await?;
+    load_reunion_for_api_member(&state, &user, reunion_id).await?;
 
     let block = ScheduleBlock::find_by_id(state.db(), block_id).await?;
     if block.reunion_id != reunion_id {
@@ -182,7 +182,7 @@ pub async fn create_slot(
     Path((reunion_id, block_id)): Path<(Uuid, Uuid)>,
     Json(body): Json<NewSignupSlot>,
 ) -> AppResult<impl IntoResponse> {
-    load_reunion(&state, reunion_id).await?;
+    load_reunion_for_api_member(&state, &user, reunion_id).await?;
     ensure_ra(&user, &state, reunion_id).await?;
 
     let block = ScheduleBlock::find_by_id(state.db(), block_id).await?;
@@ -212,7 +212,7 @@ pub async fn claim_slot(
     State(state): State<AppState>,
     Path((reunion_id, block_id, slot_id)): Path<(Uuid, Uuid, Uuid)>,
 ) -> AppResult<impl IntoResponse> {
-    let reunion = load_reunion(&state, reunion_id).await?;
+    let reunion = load_reunion_for_api_member(&state, &user, reunion_id).await?;
 
     // Members can sign up during active phase (and schedule phase for prep)
     if !matches!(reunion.phase, Phase::PrepCompleted | Phase::Active) {
@@ -246,7 +246,7 @@ pub async fn admin_assign_slot(
     Path((reunion_id, block_id, slot_id)): Path<(uuid::Uuid, uuid::Uuid, uuid::Uuid)>,
     Json(body): Json<AdminAssignRequest>,
 ) -> AppResult<impl IntoResponse> {
-    load_reunion(&state, reunion_id).await?;
+    load_reunion_for_api_member(&state, &user, reunion_id).await?;
     ensure_ra(&user, &state, reunion_id).await?;
 
     let block = ScheduleBlock::find_by_id(state.db(), block_id).await?;
@@ -271,7 +271,7 @@ pub async fn admin_remove_signup(
         uuid::Uuid,
     )>,
 ) -> AppResult<StatusCode> {
-    load_reunion(&state, reunion_id).await?;
+    load_reunion_for_api_member(&state, &user, reunion_id).await?;
     ensure_ra(&user, &state, reunion_id).await?;
 
     let block = ScheduleBlock::find_by_id(state.db(), block_id).await?;
@@ -290,7 +290,7 @@ pub async fn release_slot(
     State(state): State<AppState>,
     Path((reunion_id, block_id, slot_id)): Path<(Uuid, Uuid, Uuid)>,
 ) -> AppResult<StatusCode> {
-    let reunion = load_reunion(&state, reunion_id).await?;
+    let reunion = load_reunion_for_api_member(&state, &user, reunion_id).await?;
 
     if !matches!(reunion.phase, Phase::PrepCompleted | Phase::Active) {
         return Err(AppError::WrongPhase {

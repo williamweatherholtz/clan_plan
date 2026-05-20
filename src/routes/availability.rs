@@ -15,7 +15,7 @@ use crate::{
     state::AppState,
 };
 
-use super::helpers::{ensure_ra, load_reunion};
+use super::helpers::{ensure_ra, load_reunion, load_reunion_for_api_member};
 
 // ── GET /reunions/:id/availability/me ─────────────────────────────────────────
 
@@ -25,7 +25,7 @@ pub async fn get_my_availability(
     Path(reunion_id): Path<Uuid>,
 ) -> AppResult<impl IntoResponse> {
     // Any member can read their own availability at any phase
-    load_reunion(&state, reunion_id).await?;
+    load_reunion_for_api_member(&state, &user, reunion_id).await?;
     let dates = Availability::for_user(state.db(), reunion_id, user.id).await?;
     Ok(Json(dates))
 }
@@ -45,7 +45,7 @@ pub async fn set_my_availability(
     Path(reunion_id): Path<Uuid>,
     Json(body): Json<SetAvailabilityRequest>,
 ) -> AppResult<impl IntoResponse> {
-    let reunion = load_reunion(&state, reunion_id).await?;
+    let reunion = load_reunion_for_api_member(&state, &user, reunion_id).await?;
 
     if reunion.phase != Phase::Availability {
         return Err(AppError::WrongPhase {
@@ -65,7 +65,7 @@ pub async fn get_heatmap(
     State(state): State<AppState>,
     Path(reunion_id): Path<Uuid>,
 ) -> AppResult<impl IntoResponse> {
-    load_reunion(&state, reunion_id).await?;
+    load_reunion_for_api_member(&state, &user, reunion_id).await?;
     ensure_ra(&user, &state, reunion_id).await?;
 
     let heatmap = Availability::heatmap(state.db(), reunion_id).await?;

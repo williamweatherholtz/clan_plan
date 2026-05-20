@@ -18,7 +18,7 @@ use crate::{
     state::AppState,
 };
 
-use super::helpers::{ensure_ra, load_reunion, user_is_ra};
+use super::helpers::{ensure_ra, load_reunion, load_reunion_for_api_member, user_is_ra};
 
 // ── Response types ─────────────────────────────────────────────────────────────
 
@@ -41,7 +41,7 @@ pub async fn list_locations(
     State(state): State<AppState>,
     Path(reunion_id): Path<Uuid>,
 ) -> AppResult<impl IntoResponse> {
-    let reunion = load_reunion(&state, reunion_id).await?;
+    let reunion = load_reunion_for_api_member(&state, &user, reunion_id).await?;
     let is_ra = user_is_ra(&state, &user, reunion_id).await;
     let show_aggregate = is_ra || reunion.location_votes_revealed;
 
@@ -92,7 +92,7 @@ pub async fn create_location(
     Path(reunion_id): Path<Uuid>,
     Json(body): Json<NewLocationCandidate>,
 ) -> AppResult<impl IntoResponse> {
-    load_reunion(&state, reunion_id).await?;
+    load_reunion_for_api_member(&state, &user, reunion_id).await?;
     ensure_ra(&user, &state, reunion_id).await?;
 
     // No phase gate — RA can add locations at any time (e.g. when dates are
@@ -110,7 +110,7 @@ pub async fn update_location(
     Path((reunion_id, loc_id)): Path<(Uuid, Uuid)>,
     Json(body): Json<PatchLocationCandidate>,
 ) -> AppResult<impl IntoResponse> {
-    load_reunion(&state, reunion_id).await?;
+    load_reunion_for_api_member(&state, &user, reunion_id).await?;
     ensure_ra(&user, &state, reunion_id).await?;
 
     if body.title.trim().is_empty() {
@@ -133,7 +133,7 @@ pub async fn delete_location(
     State(state): State<AppState>,
     Path((reunion_id, loc_id)): Path<(Uuid, Uuid)>,
 ) -> AppResult<impl IntoResponse> {
-    load_reunion(&state, reunion_id).await?;
+    load_reunion_for_api_member(&state, &user, reunion_id).await?;
     ensure_ra(&user, &state, reunion_id).await?;
 
     // Verify the candidate belongs to this reunion
@@ -161,7 +161,7 @@ pub async fn vote_location(
     Path((reunion_id, loc_id)): Path<(Uuid, Uuid)>,
     Json(body): Json<VoteRequest>,
 ) -> AppResult<impl IntoResponse> {
-    let reunion = load_reunion(&state, reunion_id).await?;
+    let reunion = load_reunion_for_api_member(&state, &user, reunion_id).await?;
     let is_ra = user_is_ra(&state, &user, reunion_id).await;
 
     // Phase gate: members can vote once location candidates exist — from the
@@ -210,7 +210,7 @@ pub async fn reveal_votes(
     State(state): State<AppState>,
     Path(reunion_id): Path<Uuid>,
 ) -> AppResult<impl IntoResponse> {
-    let reunion = load_reunion(&state, reunion_id).await?;
+    let reunion = load_reunion_for_api_member(&state, &user, reunion_id).await?;
     ensure_ra(&user, &state, reunion_id).await?;
 
     // Votes can be revealed any time from Availability onward (excluding archive/post-reunion).
@@ -231,7 +231,7 @@ pub async fn select_location(
     State(state): State<AppState>,
     Path((reunion_id, loc_id)): Path<(Uuid, Uuid)>,
 ) -> AppResult<impl IntoResponse> {
-    load_reunion(&state, reunion_id).await?;
+    load_reunion_for_api_member(&state, &user, reunion_id).await?;
     ensure_ra(&user, &state, reunion_id).await?;
 
     // No phase gate — RA can select a winner at any time.
