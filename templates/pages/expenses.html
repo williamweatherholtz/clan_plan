@@ -57,14 +57,17 @@
     </thead>
     <tbody class="divide-y divide-gray-50">
       {% for e in expenses %}
-      <tr class="hover:bg-gray-50">
+      <tr id="exp-row-{{ e.expense.id }}" class="hover:bg-gray-50">
         <td class="px-4 py-3 text-gray-900 font-medium">{{ e.expense.description }}</td>
         <td class="px-4 py-3 text-gray-600">{{ e.paid_by_name }}</td>
         <td class="px-4 py-3 text-right font-semibold text-gray-900">{{ e.amount_str }}</td>
         <td class="px-4 py-3 text-gray-400">{{ e.expense.expense_date }}</td>
         {% if is_ra %}
         <td class="px-4 py-3">
-          <button onclick="confirmAction('Delete this expense?',()=>apiFetch('DELETE','/reunions/{{ reunion.id }}/expenses/{{ e.expense.id }}'))"
+          <button hx-delete="/reunions/{{ reunion.id }}/expenses/{{ e.expense.id }}"
+                  hx-target="#exp-row-{{ e.expense.id }}"
+                  hx-swap="delete"
+                  hx-confirm="Delete this expense?"
                   class="text-red-400 hover:text-red-600 text-xs">Delete</button>
         </td>
         {% endif %}
@@ -75,31 +78,9 @@
 </div>
 {% endif %}
 
-<!-- My expenses complete banner -->
-<div class="mt-6 flex items-center justify-between gap-4 bg-white rounded-xl border
-  {% if expenses_confirmed %}border-green-200{% else %}border-gray-100{% endif %}
-  shadow-sm p-4">
-  <div>
-    {% if expenses_confirmed %}
-    <p class="text-sm font-semibold text-green-700">✓ Your expenses are marked complete</p>
-    <p class="text-xs text-gray-400 mt-0.5">The organiser knows you're done. Undo if you need to add more.</p>
-    {% else %}
-    <p class="text-sm font-semibold text-gray-800">Done entering your expenses?</p>
-    <p class="text-xs text-gray-500 mt-0.5">Let the organiser know you're finished — even if you paid nothing.</p>
-    {% endif %}
-  </div>
-  {% if expenses_confirmed %}
-  <button onclick="setExpensesComplete(false)"
-          class="flex-shrink-0 px-4 py-2 text-sm font-medium text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
-    Undo
-  </button>
-  {% else %}
-  <button onclick="setExpensesComplete(true)"
-          class="flex-shrink-0 px-4 py-2 text-sm font-semibold text-green-700 border border-green-300 bg-green-50 hover:bg-green-100 rounded-lg transition-colors">
-    Mark complete ✓
-  </button>
-  {% endif %}
-</div>
+<!-- My expenses complete banner — htmx-driven via partial -->
+{% let reunion_id = reunion.id %}
+{% include "partials/expenses_confirm_banner.html" %}
 
 <!-- Add expense modal -->
 <div id="add-exp-modal" class="hidden fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">

@@ -1,7 +1,8 @@
+use askama::Template;
 use axum::{
     extract::{Path, State},
     http::{header, HeaderMap, HeaderValue, StatusCode},
-    response::IntoResponse,
+    response::{Html, IntoResponse, Response},
     Json,
 };
 use serde::Serialize;
@@ -147,11 +148,31 @@ pub async fn get_balances_csv(
 // ── POST /reunions/:id/expenses/confirm ──────────────────────────────────────
 // Any member marks their own expense entries as complete for this reunion.
 
+#[derive(Template)]
+#[template(path = "partials/expenses_confirm_banner.html")]
+struct ConfirmBannerPartial {
+    reunion_id: Uuid,
+    expenses_confirmed: bool,
+}
+
+fn is_htmx_request(headers: &HeaderMap) -> bool {
+    headers.get("HX-Request").and_then(|v| v.to_str().ok()) == Some("true")
+}
+
+fn render_banner(reunion_id: Uuid, expenses_confirmed: bool) -> AppResult<Response> {
+    let tpl = ConfirmBannerPartial { reunion_id, expenses_confirmed };
+    let html = tpl
+        .render()
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("confirm banner render: {e}")))?;
+    Ok(Html(html).into_response())
+}
+
 pub async fn confirm_expenses(
     user: CurrentUser,
     State(state): State<AppState>,
     Path(reunion_id): Path<Uuid>,
-) -> AppResult<StatusCode> {
+    headers: HeaderMap,
+) -> AppResult<Response> {
     load_reunion_for_api_member(&state, &user, reunion_id).await?;
     sqlx::query(
         "INSERT INTO expense_confirmations (reunion_id, user_id)
@@ -162,7 +183,10 @@ pub async fn confirm_expenses(
     .bind(user.id)
     .execute(state.db())
     .await?;
-    Ok(StatusCode::NO_CONTENT)
+    if is_htmx_request(&headers) {
+        return render_banner(reunion_id, true);
+    }
+    Ok(StatusCode::NO_CONTENT.into_response())
 }
 
 // ── DELETE /reunions/:id/expenses/confirm ─────────────────────────────────────
@@ -171,7 +195,8 @@ pub async fn unconfirm_expenses(
     user: CurrentUser,
     State(state): State<AppState>,
     Path(reunion_id): Path<Uuid>,
-) -> AppResult<StatusCode> {
+    headers: HeaderMap,
+) -> AppResult<Response> {
     sqlx::query(
         "DELETE FROM expense_confirmations WHERE reunion_id = $1 AND user_id = $2",
     )
@@ -179,7 +204,10 @@ pub async fn unconfirm_expenses(
     .bind(user.id)
     .execute(state.db())
     .await?;
-    Ok(StatusCode::NO_CONTENT)
+    if is_htmx_request(&headers) {
+        return render_banner(reunion_id, false);
+    }
+    Ok(StatusCode::NO_CONTENT.into_response())
 }
 
 #[cfg(test)]
