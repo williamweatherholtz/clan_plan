@@ -32,9 +32,13 @@ use super::helpers::{ensure_member, load_reunion, load_reunion_for_api_member, u
 struct RsvpBlockPartial<'a> {
     reunion_id: Uuid,
     idea_id: Uuid,
-    my_rsvp: bool,
-    rsvp_count: i64,
-    rsvp_names_str: &'a str,
+    role: &'a str,
+    is_set: bool,
+    count: i64,
+    names_str: &'a str,
+    icon: &'a str,
+    set_label: &'a str,
+    unset_label: &'a str,
 }
 
 fn is_htmx_request(headers: &HeaderMap) -> bool {
@@ -44,35 +48,53 @@ fn is_htmx_request(headers: &HeaderMap) -> bool {
         == Some("true")
 }
 
+/// `(icon, set_label, unset_label)` for each rsvp role. Keep this in lockstep
+/// with the inline labels in activities.html so the partial render after a
+/// htmx swap matches the initial server-side render.
+fn rsvp_role_labels(role: &str) -> (&'static str, &'static str, &'static str) {
+    match role {
+        "make"    => ("🍳", "I'll make it!", "I'll make it?"),
+        "cleanup" => ("🧽", "I'll clean up!", "I'll clean up?"),
+        _         => ("✓",  "I'm in!",       "I'm in?"),
+    }
+}
+
 async fn render_rsvp_partial(
     state: &AppState,
     reunion_id: Uuid,
     idea_id: Uuid,
     user_id: Uuid,
+    role: &str,
 ) -> AppResult<Response> {
     let rows: Vec<(Uuid, String)> = sqlx::query_as(
         "SELECT ar.user_id, u.display_name
          FROM activity_rsvps ar
          JOIN users u ON u.id = ar.user_id
-         WHERE ar.activity_idea_id = $1 AND ar.role = 'in'
+         WHERE ar.activity_idea_id = $1 AND ar.role = $2
          ORDER BY u.display_name",
     )
     .bind(idea_id)
+    .bind(role)
     .fetch_all(state.db())
     .await?;
-    let rsvp_count = rows.len() as i64;
-    let my_rsvp = rows.iter().any(|(uid, _)| *uid == user_id);
-    let rsvp_names_str = rows
+    let count = rows.len() as i64;
+    let is_set = rows.iter().any(|(uid, _)| *uid == user_id);
+    let names_str = rows
         .iter()
         .map(|(_, n)| n.as_str())
         .collect::<Vec<_>>()
         .join(", ");
+    let (icon, set_label, unset_label) = rsvp_role_labels(role);
     let tpl = RsvpBlockPartial {
         reunion_id,
         idea_id,
-        my_rsvp,
-        rsvp_count,
-        rsvp_names_str: &rsvp_names_str,
+        role,
+        is_set,
+        count,
+        names_str: &names_str,
+        icon,
+        set_label,
+        unset_label,
     };
     let body = tpl
         .render()
@@ -494,8 +516,8 @@ pub async fn rsvp_activity(
     // the client doesn't have to reload to see the new state. Other
     // callers (the existing toggleRsvp wrapper, curl, integration tests)
     // continue to get 204 No Content.
-    if role == "in" && is_htmx_request(&headers) {
-        return render_rsvp_partial(&state, reunion_id, act_id, user.id).await;
+    if is_htmx_request(&headers) {
+        return render_rsvp_partial(&state, reunion_id, act_id, user.id, role).await;
     }
     Ok(StatusCode::NO_CONTENT.into_response())
 }
@@ -520,8 +542,8 @@ pub async fn unrsvp_activity(
     .bind(role)
     .execute(state.db())
     .await?;
-    if role == "in" && is_htmx_request(&headers) {
-        return render_rsvp_partial(&state, reunion_id, act_id, user.id).await;
+    if is_htmx_request(&headers) {
+        return render_rsvp_partial(&state, reunion_id, act_id, user.id, role).await;
     }
     Ok(StatusCode::NO_CONTENT.into_response())
 }

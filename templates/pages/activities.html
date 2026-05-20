@@ -133,51 +133,37 @@
     <p class="text-xs text-indigo-500 mb-2">📅 {{ st }}</p>
     {% endif %}
 
+    {% let idea_id = a.idea.id %}
+    {% let reunion_id = reunion.id %}
     {% if a.idea.category == "meal" %}
     <!-- Meal: separate "I'll make" and "I'll clean up" sign-ups -->
     <div class="flex flex-col gap-2 mb-2">
-      <div class="flex items-center gap-3 flex-wrap">
-        {% if a.my_make %}
-        <button onclick="toggleRsvp('{{ reunion.id }}','{{ a.idea.id }}',false,'make')"
-                class="flex items-center gap-1 px-3 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-700 border border-green-200 hover:bg-green-200 transition-colors">
-          🍳 I'll make it! ({{ a.make_count }})
-        </button>
-        {% else %}
-        <button onclick="toggleRsvp('{{ reunion.id }}','{{ a.idea.id }}',true,'make')"
-                class="flex items-center gap-1 px-3 py-1 text-xs font-medium rounded-full border border-gray-200 text-gray-600 hover:border-green-300 hover:text-green-700 hover:bg-green-50 transition-colors">
-          🍳 I'll make it?{% if a.make_count > 0 %} ({{ a.make_count }}){% endif %}
-        </button>
-        {% endif %}
-        {% if !a.make_names_str.is_empty() %}
-        <span class="text-xs text-gray-400">{{ a.make_names_str }}</span>
-        {% endif %}
-      </div>
-      <div class="flex items-center gap-3 flex-wrap">
-        {% if a.my_cleanup %}
-        <button onclick="toggleRsvp('{{ reunion.id }}','{{ a.idea.id }}',false,'cleanup')"
-                class="flex items-center gap-1 px-3 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-700 border border-green-200 hover:bg-green-200 transition-colors">
-          🧽 I'll clean up! ({{ a.cleanup_count }})
-        </button>
-        {% else %}
-        <button onclick="toggleRsvp('{{ reunion.id }}','{{ a.idea.id }}',true,'cleanup')"
-                class="flex items-center gap-1 px-3 py-1 text-xs font-medium rounded-full border border-gray-200 text-gray-600 hover:border-green-300 hover:text-green-700 hover:bg-green-50 transition-colors">
-          🧽 I'll clean up?{% if a.cleanup_count > 0 %} ({{ a.cleanup_count }}){% endif %}
-        </button>
-        {% endif %}
-        {% if !a.cleanup_names_str.is_empty() %}
-        <span class="text-xs text-gray-400">{{ a.cleanup_names_str }}</span>
-        {% endif %}
-      </div>
+      {% let role = "make" %}
+      {% let is_set = a.my_make %}
+      {% let count = a.make_count %}
+      {% let names_str = a.make_names_str.as_str() %}
+      {% let icon = "🍳" %}
+      {% let set_label = "I'll make it!" %}
+      {% let unset_label = "I'll make it?" %}
+      {% include "partials/rsvp_block.html" %}
+      {% let role = "cleanup" %}
+      {% let is_set = a.my_cleanup %}
+      {% let count = a.cleanup_count %}
+      {% let names_str = a.cleanup_names_str.as_str() %}
+      {% let icon = "🧽" %}
+      {% let set_label = "I'll clean up!" %}
+      {% let unset_label = "I'll clean up?" %}
+      {% include "partials/rsvp_block.html" %}
     </div>
     {% else %}
-    <!-- RSVP button + who's interested. Rendered via the rsvp_block
-         partial so the same markup is reused when htmx swaps it after
-         a click. Bind the partial's expected names to this scope. -->
-    {% let idea_id = a.idea.id %}
-    {% let reunion_id = reunion.id %}
-    {% let my_rsvp = a.my_rsvp %}
-    {% let rsvp_count = a.rsvp_count %}
-    {% let rsvp_names_str = a.rsvp_names_str.as_str() %}
+    <!-- Non-meal: single "I'm in" RSVP -->
+    {% let role = "in" %}
+    {% let is_set = a.my_rsvp %}
+    {% let count = a.rsvp_count %}
+    {% let names_str = a.rsvp_names_str.as_str() %}
+    {% let icon = "✓" %}
+    {% let set_label = "I'm in!" %}
+    {% let unset_label = "I'm in?" %}
     {% include "partials/rsvp_block.html" %}
     {% endif %}
 
