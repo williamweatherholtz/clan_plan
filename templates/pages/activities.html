@@ -129,7 +129,7 @@
     <!-- Metadata (proposer) sits at the top — it's context for the card,
          not part of the user's interaction surface. -->
     <p class="text-xs text-gray-400 mb-2">
-      Suggested by <span class="font-medium text-gray-500">{{ a.proposed_by_name }}</span>{% if let Some(fam) = a.proposed_by_family %} · {{ fam }}{% endif %}
+      by <span class="font-medium text-gray-500">{{ a.proposed_by_name }}</span>{% if let Some(fam) = a.proposed_by_family %} · {{ fam }}{% endif %}
     </p>
 
     {% if let Some(desc) = a.idea.description %}
