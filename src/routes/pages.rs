@@ -2121,14 +2121,21 @@ pub async fn admin_page(
     let users = User::list_all(state.db()).await?;
     let family_units = FamilyUnit::list_all(state.db()).await?;
 
-    let (total_bytes, total_files): (Option<i64>, i64) = sqlx::query_as(
-        "SELECT SUM(file_size_bytes), COUNT(*) FROM media",
+    // Postgres SUM(BIGINT) returns NUMERIC, not BIGINT — sqlx silently failed
+    // to deserialize into i64 and the unwrap_or below masked it as 0/0. The
+    // ::BIGINT cast on the sum (and COALESCE for the all-NULL case when the
+    // table is empty) keeps the row decodable into (i64, i64).
+    let (total_bytes, total_files): (i64, i64) = sqlx::query_as(
+        "SELECT COALESCE(SUM(file_size_bytes), 0)::BIGINT, COUNT(*) FROM media",
     )
     .fetch_one(state.db())
     .await
-    .unwrap_or((Some(0), 0));
+    .unwrap_or_else(|e| {
+        tracing::warn!("admin storage stats query failed: {e:?}");
+        (0, 0)
+    });
 
-    let total_mb = format!("{:.1}", total_bytes.unwrap_or(0) as f64 / 1_048_576.0);
+    let total_mb = format!("{:.1}", total_bytes as f64 / 1_048_576.0);
     let storage = StorageStatsView { total_files, total_mb };
 
     let all_reunions = Reunion::list_all(state.db()).await?;
