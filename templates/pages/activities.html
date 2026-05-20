@@ -126,6 +126,12 @@
   <!-- ── Expandable body ── -->
   <div id="body-{{ a.idea.id }}" class="hidden border-t border-gray-50 px-4 pb-4 pt-3">
 
+    <!-- Metadata (proposer) sits at the top — it's context for the card,
+         not part of the user's interaction surface. -->
+    <p class="text-xs text-gray-400 mb-2">
+      Suggested by <span class="font-medium text-gray-500">{{ a.proposed_by_name }}</span>{% if let Some(fam) = a.proposed_by_family %} · {{ fam }}{% endif %}
+    </p>
+
     {% if let Some(desc) = a.idea.description %}
     <p class="text-sm text-gray-600 mb-2">{{ desc }}</p>
     {% endif %}
@@ -166,11 +172,6 @@
     {% let unset_label = "I'm in?" %}
     {% include "partials/rsvp_block.html" %}
     {% endif %}
-
-    <!-- Proposer -->
-    <p class="text-xs text-gray-400 mb-3">
-      Suggested by <span class="font-medium text-gray-500">{{ a.proposed_by_name }}</span>{% if let Some(fam) = a.proposed_by_family %} · {{ fam }}{% endif %}
-    </p>
 
     <!-- Comments (auto-loaded on expand) -->
     <div id="comments-{{ a.idea.id }}" class="mb-3">
