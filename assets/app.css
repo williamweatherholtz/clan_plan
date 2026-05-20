@@ -46,7 +46,7 @@
 body {
   background: var(--bg);
   color: var(--text);
-  font-size: 16px;
+  font-size: 17px;
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
