@@ -40,7 +40,12 @@ pub async fn verify_password(password: &str, hash: &str) -> bool {
 /// Generate a 64-character cryptographically random alphanumeric token.
 /// Suitable for email-verification and password-reset links.
 pub fn generate_token() -> String {
-    rand::thread_rng()
+    // Use OsRng directly (not thread_rng) so we draw straight from the OS
+    // entropy source for security-critical tokens (session cookies, password
+    // reset, email verification, invite links). thread_rng is also a CSPRNG
+    // but it's userspace state; OsRng has no such surface.
+    use rand::Rng as _;
+    rand::rngs::OsRng
         .sample_iter(rand::distributions::Alphanumeric)
         .take(64)
         .map(char::from)
