@@ -75,15 +75,31 @@
   --focus-ring:   0 0 0 3px rgba(122, 162, 255, .28);
 }
 
-/* ── Body & global type ─────────────────────────────────────────────────── */
+/* ── Body & global type ─────────────────────────────────────────────────── *
+ * Sizing follows WCAG (≥16px base for older readers, ≥18px better) and the
+ * iOS HIG defaults rather than Tailwind's default 16px. We override
+ * Tailwind's text-xs/text-sm utilities below because their default sizes
+ * (12px/14px) fall below the legible threshold for older eyes — `text-xs`
+ * jumps from 12px to 14px, `text-sm` from 14px to 15.5px. Buttons get a
+ * 44×44px minimum touch target via min-height on the .btn and chip classes.
+ */
 body {
   background: var(--bg);
   color: var(--text);
-  font-size: 17px;
-  line-height: 1.55;
+  font-size: 18px;
+  line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+
+/* Tailwind utility overrides: bump the small-text sizes that templates use
+ * extensively for metadata, badges, and helper copy. Original Tailwind:
+ *   text-xs = 0.75rem  (12px) → 0.875rem (14px) here
+ *   text-sm = 0.875rem (14px) → 0.95rem  (15.2px) here
+ * Larger increases hurt layout in dense lists; this is the comfortable
+ * minimum that still keeps badges/chips compact. */
+.text-xs { font-size: 0.875rem !important; line-height: 1.45 !important; }
+.text-sm { font-size: 0.95rem  !important; line-height: 1.5  !important; }
 
 /* Headings */
 h1, h2, h3, h4 { color: var(--text); letter-spacing: -0.01em; }

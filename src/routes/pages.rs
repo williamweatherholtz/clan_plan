@@ -225,7 +225,7 @@ fn reunion_tabs(_reunion_id: Uuid, active_path: &str) -> Vec<NavTab> {
     // existing links keep working.
     let defs: &[(&str, &str, u8)] = &[
         ("",              "Overview",      0),
-        ("activities",    "Check events",  0),
+        ("activities",    "Activities",  0),
         // Plan dropdown
         ("availability",  "Dates",         1),
         ("locations",     "Locations",     1),
@@ -1857,7 +1857,7 @@ pub async fn activities_page(
         is_sysadmin: user.is_sysadmin(),
         flash,
         tabs: reunion_tabs(reunion_id, "activities"),
-        tab_label: "Check events",
+        tab_label: "Activities",
         reunion,
         reunion_date,
         activities,
