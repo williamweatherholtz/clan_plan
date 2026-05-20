@@ -15,8 +15,11 @@
 
 {% block content %}
 <!-- ── Tab bar: top-level tabs (group 0) + Plan dropdown (group 1) ────── -->
-<!-- relative z-50 keeps the Plan dropdown above page cards. Do not lower. -->
-<div class="mb-8 relative z-50" style="border-bottom: 1px solid var(--border-2);">
+<!-- z-30 puts this above page cards/filter-bar (z-20) so the Plan dropdown
+     panel renders on top of content, while staying BELOW the sticky nav
+     header (z-40) so the user menu can still drop over it. See the
+     "Stacking layer policy" comment block in assets/app.css. -->
+<div class="mb-8 relative z-30" style="border-bottom: 1px solid var(--border-2);">
   <div class="flex items-center gap-6 sm:gap-8 flex-wrap">
     {% for tab in tabs %}
       {% if tab.group == 0 %}

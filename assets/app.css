@@ -77,11 +77,24 @@ a:hover { text-decoration: underline; text-underline-offset: 3px; }
 /* ── Cards ──────────────────────────────────────────────────────────────── */
 /* `.card` is JUST the container shape — callers add their own padding so the
    internal padding compounds correctly with nested headers/bodies. */
-/* Cards must NOT establish a stacking context (no position, no z-index, no
- * transform, no isolation) — the reunion tab bar's Plan dropdown is z-50
- * absolute and needs to render over page content. If you need a positioned
- * child inside a card, wrap that child in its own .relative element instead
- * of putting `relative` on the card itself. */
+/* ── Stacking layer policy ───────────────────────────────────────────────────
+ * Interacted UI (dropdowns, modals, tooltips) must always render above static
+ * "background" UI. Allocate z-index in fixed bands so the rule survives
+ * future changes:
+ *
+ *   z auto (0): page content, cards, generic flow
+ *   z-20: in-flow elevated content above cards (activity filter bar, etc.)
+ *   z-30: tab bars and their inline dropdown panels
+ *   z-40: sticky nav header (always on top of page chrome)
+ *   z-50: floating panels (user menu dropdown, modals, toasts) — typically
+ *         scoped to their parent's stacking context so a higher-layered
+ *         parent (e.g. the nav at z-40) wins at the document level
+ *
+ * Cards must NOT establish a stacking context (no position, no z-index, no
+ * transform, no isolation) — if they do, every dropdown above them needs to
+ * fight that context. If you need a positioned child inside a card, wrap
+ * that child in its own .relative element instead of putting `relative` on
+ * the card itself. */
 .card {
   background: var(--surface);
   border: 1px solid var(--border-2);
