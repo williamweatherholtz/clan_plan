@@ -19,6 +19,13 @@
   <!-- Atkinson Hyperlegible self-hosted via @font-face in app.css -->
   <link rel="stylesheet" href="/assets/tailwind.css">
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <!-- htmx: declarative AJAX swaps. Used for in-place updates after RSVP /
+       status / comment / etc. actions so the page doesn't reload. Routes
+       that serve htmx return a small HTML fragment when the request has the
+       HX-Request header; otherwise the same route returns JSON. -->
+  <script defer src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.4/dist/htmx.min.js"
+          integrity="sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+"
+          crossorigin="anonymous"></script>
   <link rel="stylesheet" href="/assets/app.css">
 </head>
 <body class="min-h-full font-sans">

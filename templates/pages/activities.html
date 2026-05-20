@@ -170,24 +170,15 @@
       </div>
     </div>
     {% else %}
-    <!-- RSVP button + who's interested -->
-    <div class="flex items-center gap-3 flex-wrap mb-2">
-      {% if a.my_rsvp %}
-      <button onclick="toggleRsvp('{{ reunion.id }}','{{ a.idea.id }}',false)"
-              class="flex items-center gap-1 px-3 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-700 border border-green-200 hover:bg-green-200 transition-colors">
-        ✓ I'm in! ({{ a.rsvp_count }})
-      </button>
-      {% else %}
-      <button onclick="toggleRsvp('{{ reunion.id }}','{{ a.idea.id }}',true)"
-              class="flex items-center gap-1 px-3 py-1 text-xs font-medium rounded-full border border-gray-200 text-gray-600 hover:border-green-300 hover:text-green-700 hover:bg-green-50 transition-colors">
-        I'm in? {% if a.rsvp_count > 0 %}({{ a.rsvp_count }}){% endif %}
-      </button>
-      {% endif %}
-
-      {% if !a.rsvp_names_str.is_empty() %}
-      <span class="text-xs text-gray-400">{{ a.rsvp_names_str }}</span>
-      {% endif %}
-    </div>
+    <!-- RSVP button + who's interested. Rendered via the rsvp_block
+         partial so the same markup is reused when htmx swaps it after
+         a click. Bind the partial's expected names to this scope. -->
+    {% let idea_id = a.idea.id %}
+    {% let reunion_id = reunion.id %}
+    {% let my_rsvp = a.my_rsvp %}
+    {% let rsvp_count = a.rsvp_count %}
+    {% let rsvp_names_str = a.rsvp_names_str.as_str() %}
+    {% include "partials/rsvp_block.html" %}
     {% endif %}
 
     <!-- Proposer -->

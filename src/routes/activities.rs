@@ -1,7 +1,8 @@
+use askama::Template;
 use axum::{
     extract::{Path, Query, State},
-    http::StatusCode,
-    response::IntoResponse,
+    http::{HeaderMap, StatusCode},
+    response::{Html, IntoResponse, Response},
     Json,
 };
 use serde::{Deserialize, Serialize};
@@ -18,6 +19,66 @@ use crate::{
 };
 
 use super::helpers::{ensure_member, load_reunion, load_reunion_for_api_member, user_is_ra};
+
+// ── htmx partial template ──────────────────────────────────────────────────
+//
+// `templates/partials/rsvp_block.html` is rendered both as part of the
+// activities page (initial load) and as the response body to PUT/DELETE
+// rsvp requests bearing an `HX-Request` header. The same partial means we
+// only have one place where the button states live.
+
+#[derive(Template)]
+#[template(path = "partials/rsvp_block.html")]
+struct RsvpBlockPartial<'a> {
+    reunion_id: Uuid,
+    idea_id: Uuid,
+    my_rsvp: bool,
+    rsvp_count: i64,
+    rsvp_names_str: &'a str,
+}
+
+fn is_htmx_request(headers: &HeaderMap) -> bool {
+    headers
+        .get("HX-Request")
+        .and_then(|v| v.to_str().ok())
+        == Some("true")
+}
+
+async fn render_rsvp_partial(
+    state: &AppState,
+    reunion_id: Uuid,
+    idea_id: Uuid,
+    user_id: Uuid,
+) -> AppResult<Response> {
+    let rows: Vec<(Uuid, String)> = sqlx::query_as(
+        "SELECT ar.user_id, u.display_name
+         FROM activity_rsvps ar
+         JOIN users u ON u.id = ar.user_id
+         WHERE ar.activity_idea_id = $1 AND ar.role = 'in'
+         ORDER BY u.display_name",
+    )
+    .bind(idea_id)
+    .fetch_all(state.db())
+    .await?;
+    let rsvp_count = rows.len() as i64;
+    let my_rsvp = rows.iter().any(|(uid, _)| *uid == user_id);
+    let rsvp_names_str = rows
+        .iter()
+        .map(|(_, n)| n.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let tpl = RsvpBlockPartial {
+        reunion_id,
+        idea_id,
+        my_rsvp,
+        rsvp_count,
+        rsvp_names_str: &rsvp_names_str,
+    };
+    let body = tpl
+        .render()
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("rsvp partial render: {e}")))?;
+    Ok(Html(body).into_response())
+}
 
 // ── Response types ─────────────────────────────────────────────────────────────
 
@@ -409,8 +470,9 @@ pub async fn rsvp_activity(
     user: CurrentUser,
     State(state): State<AppState>,
     Path((reunion_id, act_id)): Path<(Uuid, Uuid)>,
+    headers: HeaderMap,
     Query(q): Query<RsvpQuery>,
-) -> AppResult<StatusCode> {
+) -> AppResult<Response> {
     load_reunion_for_api_member(&state, &user, reunion_id).await?;
     let idea = ActivityIdea::find_by_id(state.db(), act_id).await?;
     if idea.reunion_id != reunion_id {
@@ -428,15 +490,23 @@ pub async fn rsvp_activity(
     .bind(role)
     .execute(state.db())
     .await?;
-    Ok(StatusCode::NO_CONTENT)
+    // htmx swap target: respond with the freshly-rendered RSVP block so
+    // the client doesn't have to reload to see the new state. Other
+    // callers (the existing toggleRsvp wrapper, curl, integration tests)
+    // continue to get 204 No Content.
+    if role == "in" && is_htmx_request(&headers) {
+        return render_rsvp_partial(&state, reunion_id, act_id, user.id).await;
+    }
+    Ok(StatusCode::NO_CONTENT.into_response())
 }
 
 pub async fn unrsvp_activity(
     user: CurrentUser,
     State(state): State<AppState>,
     Path((reunion_id, act_id)): Path<(Uuid, Uuid)>,
+    headers: HeaderMap,
     Query(q): Query<RsvpQuery>,
-) -> AppResult<StatusCode> {
+) -> AppResult<Response> {
     load_reunion_for_api_member(&state, &user, reunion_id).await?;
     let role = q.role.as_deref().unwrap_or("in");
     if !matches!(role, "in" | "make" | "cleanup") {
@@ -450,7 +520,10 @@ pub async fn unrsvp_activity(
     .bind(role)
     .execute(state.db())
     .await?;
-    Ok(StatusCode::NO_CONTENT)
+    if role == "in" && is_htmx_request(&headers) {
+        return render_rsvp_partial(&state, reunion_id, act_id, user.id).await;
+    }
+    Ok(StatusCode::NO_CONTENT.into_response())
 }
 
 #[cfg(test)]
