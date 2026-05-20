@@ -49,6 +49,14 @@ struct CommentsListPartial<'a> {
     comments: &'a [CommentResponseView],
 }
 
+#[derive(Template)]
+#[template(path = "partials/comment_row.html")]
+struct CommentRowPartial<'a> {
+    reunion_id: Uuid,
+    idea_id: Uuid,
+    c: &'a CommentResponseView,
+}
+
 fn is_htmx_request(headers: &HeaderMap) -> bool {
     headers
         .get("HX-Request")
@@ -309,23 +317,62 @@ pub async fn delete_comment(
 pub async fn update_comment(
     user: CurrentUser,
     State(state): State<AppState>,
-    Path((reunion_id, _act_id, cmt_id)): Path<(Uuid, Uuid, Uuid)>,
-    Json(body): Json<CommentRequest>,
-) -> AppResult<impl IntoResponse> {
+    Path((reunion_id, act_id, cmt_id)): Path<(Uuid, Uuid, Uuid)>,
+    headers: HeaderMap,
+    body: axum::body::Bytes,
+) -> AppResult<Response> {
     load_reunion_for_api_member(&state, &user, reunion_id).await?;
 
-    if body.content.trim().is_empty() {
+    // Same content-type negotiation as create_comment: JSON for API callers,
+    // form-encoded for htmx <form> submissions.
+    let ct = headers
+        .get(axum::http::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    let req: CommentRequest = if ct.starts_with("application/json") {
+        serde_json::from_slice(&body)
+            .map_err(|e| AppError::BadRequest(format!("invalid JSON: {e}").into()))?
+    } else {
+        serde_urlencoded::from_bytes(&body)
+            .map_err(|e| AppError::BadRequest(format!("invalid form body: {e}").into()))?
+    };
+
+    if req.content.trim().is_empty() {
         return Err(AppError::BadRequest("comment cannot be empty".into()));
     }
-    if body.content.len() > 2_000 {
+    if req.content.len() > 2_000 {
         return Err(AppError::BadRequest(
             "comment cannot exceed 2,000 characters".into(),
         ));
     }
 
     let updated =
-        ActivityComment::update(state.db(), cmt_id, user.id, body.content.trim()).await?;
-    Ok(Json(updated))
+        ActivityComment::update(state.db(), cmt_id, user.id, req.content.trim()).await?;
+
+    if is_htmx_request(&headers) {
+        // The author is necessarily the current user (the model's WHERE
+        // user_id=$3 enforces it), so we can build the view directly from
+        // CurrentUser without a second query.
+        let view = CommentResponseView {
+            is_mine: true,
+            id: updated.id,
+            activity_idea_id: updated.activity_idea_id,
+            user_id: updated.user_id,
+            content: updated.content.clone(),
+            created_at: updated.created_at,
+            display_name: user.display_name.clone(),
+        };
+        let tpl = CommentRowPartial {
+            reunion_id,
+            idea_id: act_id,
+            c: &view,
+        };
+        let html = tpl
+            .render()
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("comment row render: {e}")))?;
+        return Ok(Html(html).into_response());
+    }
+    Ok(Json(updated).into_response())
 }
 
 // ── PATCH /reunions/:id/activities/:act_id/status ─────────────────────────────

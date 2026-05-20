@@ -11,17 +11,6 @@
   <p class="text-xs text-gray-400 italic">No comments yet.</p>
 {% else %}
   {% for c in comments %}
-  <div id="cmt-{{ c.id }}" class="flex gap-2 items-baseline">
-    <span class="font-medium text-gray-700 text-xs">{{ c.display_name }}</span>
-    <span class="text-gray-600 text-xs flex-1">{{ c.content }}</span>
-    {% if c.is_mine %}
-    <button hx-delete="/api/reunions/{{ reunion_id }}/activities/{{ idea_id }}/comments/{{ c.id }}"
-            hx-target="#cmt-{{ c.id }}"
-            hx-swap="delete"
-            hx-confirm="Delete this comment?"
-            class="text-xs text-rose-500 hover:text-rose-700"
-            title="Delete">×</button>
-    {% endif %}
-  </div>
+    {% include "partials/comment_row.html" %}
   {% endfor %}
 {% endif %}

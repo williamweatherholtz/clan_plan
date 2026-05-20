@@ -1,0 +1,50 @@
+{# Single comment row. Renders both the display state and (for the
+   comment's author) an inline edit form, toggled by Alpine's
+   x-data="{ editing }". Used both by the comments_list partial
+   (initial render of all comments) and as the response body of
+   PATCH /comments/:id (returns this row alone, swapped via
+   hx-target=#cmt-{id} hx-swap=outerHTML).
+
+   Variables expected in scope:
+     reunion_id : Uuid
+     idea_id    : Uuid
+     c          : CommentResponseView { id, content, display_name, is_mine, ... } #}
+<div id="cmt-{{ c.id }}" class="flex gap-2 items-start"
+     {% if c.is_mine %}x-data="{ editing: false }"{% endif %}>
+  <span class="font-medium text-gray-700 text-xs whitespace-nowrap pt-0.5">{{ c.display_name }}</span>
+
+  {% if c.is_mine %}
+  <!-- Display mode (click body to edit) -->
+  <span class="text-gray-600 text-xs flex-1 cursor-text hover:bg-amber-50 rounded px-1 -mx-1"
+        x-show="!editing"
+        @click="editing = true"
+        title="Click to edit">{{ c.content }}</span>
+
+  <!-- Edit mode -->
+  <form x-show="editing" x-cloak
+        hx-patch="/api/reunions/{{ reunion_id }}/activities/{{ idea_id }}/comments/{{ c.id }}"
+        hx-target="#cmt-{{ c.id }}"
+        hx-swap="outerHTML"
+        @htmx:after-request="if ($event.detail.successful) editing = false"
+        class="flex gap-1 flex-1 items-center">
+    <input type="text" name="content" value="{{ c.content }}"
+           x-init="$nextTick(() => $el.focus())"
+           @keydown.escape="editing = false"
+           class="flex-1 px-2 py-1 text-xs border border-amber-300 rounded focus:outline-none focus:ring-2 focus:ring-amber-400">
+    <button type="submit" class="px-2 py-0.5 text-xs font-semibold bg-amber-500 hover:bg-amber-600 text-white rounded">Save</button>
+    <button type="button" @click="editing = false"
+            class="px-2 py-0.5 text-xs text-gray-500 hover:text-gray-700">Cancel</button>
+  </form>
+
+  <button x-show="!editing"
+          hx-delete="/api/reunions/{{ reunion_id }}/activities/{{ idea_id }}/comments/{{ c.id }}"
+          hx-target="#cmt-{{ c.id }}"
+          hx-swap="delete"
+          hx-confirm="Delete this comment?"
+          class="text-xs text-rose-500 hover:text-rose-700 pt-0.5"
+          title="Delete">×</button>
+  {% else %}
+  <!-- Someone else's comment — display only -->
+  <span class="text-gray-600 text-xs flex-1">{{ c.content }}</span>
+  {% endif %}
+</div>
