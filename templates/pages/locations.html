@@ -8,7 +8,8 @@
   {% if is_ra %}
   <div class="flex gap-2">
     {% if !votes_revealed %}
-    <button onclick="apiFetch('POST','/reunions/{{ reunion.id }}/locations/reveal').then(()=>location.reload()).catch(e=>showToast(e.message,'error'))"
+    <button hx-post="/reunions/{{ reunion.id }}/locations/reveal"
+            hx-on::after-request="if (event.detail.successful) window.location.reload()"
             class="px-3 py-1.5 text-sm font-medium text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50">
       Reveal votes
     </button>
@@ -29,7 +30,7 @@
 
 <div class="grid gap-4 sm:grid-cols-2">
   {% for loc in locations %}
-  <div class="bg-white rounded-xl shadow-sm p-5 border-2
+  <div id="loc-card-{{ loc.candidate.id }}" class="bg-white rounded-xl shadow-sm p-5 border-2
     {% if loc.selected %}border-green-400{% else %}border-transparent ring-1 ring-gray-100{% endif %}">
 
     <!-- Winner banner -->
@@ -143,12 +144,16 @@
         Edit
       </button>
       {% if !loc.selected %}
-      <button onclick="apiFetch('POST','/reunions/{{ reunion.id }}/locations/{{ loc.candidate.id }}/select').then(()=>location.reload()).catch(e=>showToast(e.message,'error'))"
+      <button hx-post="/reunions/{{ reunion.id }}/locations/{{ loc.candidate.id }}/select"
+              hx-on::after-request="if (event.detail.successful) window.location.reload()"
               class="px-3 py-1 text-xs font-medium bg-green-500 text-white rounded-lg hover:bg-green-600">
         Select as winner
       </button>
       {% endif %}
-      <button onclick="confirmAction('Delete this location?',()=>apiFetch('DELETE','/reunions/{{ reunion.id }}/locations/{{ loc.candidate.id }}').then(()=>location.reload()))"
+      <button hx-delete="/reunions/{{ reunion.id }}/locations/{{ loc.candidate.id }}"
+              hx-target="#loc-card-{{ loc.candidate.id }}"
+              hx-swap="delete"
+              hx-confirm="Delete this location?"
               class="px-3 py-1 text-xs font-medium text-red-500 border border-red-200 rounded-lg hover:bg-red-50">
         Delete
       </button>
