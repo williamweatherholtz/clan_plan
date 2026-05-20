@@ -307,18 +307,30 @@ pub async fn delete_activity(
     // Capture before deletion — the promoted block should go with the idea.
     let promoted_block_id = idea.promoted_to_block_id;
 
-    // is_admin=false means the model's WHERE user_id=$2 clause is used,
-    // which double-checks the same author rule at the SQL level.
-    ActivityIdea::delete(state.db(), act_id, user.id, false).await?;
-
-    // If this idea was promoted to a schedule block, delete that block too.
-    // Schedule slots cascade automatically via the schedule_blocks FK.
+    // Both deletes share a single transaction so a failure on the block
+    // delete (deadlock, connection drop, etc.) rolls back the idea delete
+    // too — previously the two were non-transactional and a partial
+    // failure left dangling state.
+    let mut tx = state.db().begin().await?;
+    // WHERE id = $1 AND proposed_by = $2 enforces the author-only rule at
+    // the SQL level (matches ActivityIdea::delete's non-admin branch).
+    let result = sqlx::query(
+        "DELETE FROM activity_ideas WHERE id = $1 AND proposed_by = $2",
+    )
+    .bind(act_id)
+    .bind(user.id)
+    .execute(&mut *tx)
+    .await?;
+    if result.rows_affected() == 0 {
+        return Err(AppError::Forbidden);
+    }
     if let Some(block_id) = promoted_block_id {
         sqlx::query("DELETE FROM schedule_blocks WHERE id = $1")
             .bind(block_id)
-            .execute(state.db())
+            .execute(&mut *tx)
             .await?;
     }
+    tx.commit().await?;
 
     Ok(StatusCode::NO_CONTENT)
 }

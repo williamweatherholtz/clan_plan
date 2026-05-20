@@ -3,11 +3,10 @@ use std::{net::SocketAddr, time::Duration as StdDuration};
 use time::Duration;
 use tokio::net::TcpListener;
 use axum::{
-    body::Body,
     extract::Request,
     http::{header::LOCATION, StatusCode},
     middleware::Next,
-    response::Response,
+    response::{IntoResponse, Response},
 };
 use tower::Layer;
 use tower_http::{
@@ -50,11 +49,11 @@ async fn redirect_to_canonical_path(req: Request, next: Next) -> Response {
             Some(q) => format!("{}?{}", canonical, q),
             None => canonical,
         };
-        return Response::builder()
-            .status(StatusCode::PERMANENT_REDIRECT)
-            .header(LOCATION, location)
-            .body(Body::empty())
-            .unwrap();
+        return (
+            StatusCode::PERMANENT_REDIRECT,
+            [(LOCATION, location)],
+        )
+            .into_response();
     }
     next.run(req).await
 }

@@ -92,11 +92,16 @@ pub async fn upload_media(
         file_path: relative_path,
     };
 
-    let media = Media::create(state.db(), new).await.map_err(|e| {
-        // Best-effort cleanup if the DB insert fails
-        let _ = std::fs::remove_file(&abs_path);
-        e
-    })?;
+    let media = match Media::create(state.db(), new).await {
+        Ok(m) => m,
+        Err(e) => {
+            // Best-effort async cleanup if the DB insert fails. We use
+            // tokio::fs (not std::fs) so we never block the runtime
+            // worker on the syscall.
+            let _ = tokio::fs::remove_file(&abs_path).await;
+            return Err(e);
+        }
+    };
 
     Ok((StatusCode::CREATED, Json(media)))
 }
