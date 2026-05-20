@@ -1,7 +1,8 @@
+use askama::Template;
 use axum::{
     extract::{Path, State},
-    http::StatusCode,
-    response::IntoResponse,
+    http::{HeaderMap, StatusCode},
+    response::{Html, IntoResponse, Response},
     Json,
 };
 use serde::Serialize;
@@ -20,6 +21,52 @@ use crate::{
 };
 
 use super::helpers::{ensure_member, ensure_ra, load_reunion, load_reunion_for_api_member, user_is_ra};
+
+// ── htmx partial ──────────────────────────────────────────────────────────
+
+#[derive(Template)]
+#[template(path = "partials/schedule_slot_row.html")]
+struct SlotRowPartial<'a> {
+    reunion_id: Uuid,
+    block_id: Uuid,
+    slot: SignupSlot,
+    signups: &'a [Signup],
+    is_full: bool,
+    user_signed_up: bool,
+}
+
+fn is_htmx_request(headers: &HeaderMap) -> bool {
+    headers.get("HX-Request").and_then(|v| v.to_str().ok()) == Some("true")
+}
+
+async fn render_slot_row(
+    state: &AppState,
+    reunion_id: Uuid,
+    block_id: Uuid,
+    slot_id: Uuid,
+    user_id: Uuid,
+) -> AppResult<Response> {
+    let slot: SignupSlot = sqlx::query_as("SELECT * FROM signup_slots WHERE id = $1")
+        .bind(slot_id)
+        .fetch_one(state.db())
+        .await?;
+    let signups = Signup::list_for_slot(state.db(), slot_id).await?;
+    let signup_count = signups.len() as i32;
+    let is_full = slot.max_count.map(|m| signup_count >= m).unwrap_or(false);
+    let user_signed_up = signups.iter().any(|s| s.user_id == user_id);
+    let tpl = SlotRowPartial {
+        reunion_id,
+        block_id,
+        slot,
+        signups: &signups,
+        is_full,
+        user_signed_up,
+    };
+    let body = tpl
+        .render()
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("slot row render: {e}")))?;
+    Ok(Html(body).into_response())
+}
 
 // ── Response types ─────────────────────────────────────────────────────────────
 
@@ -242,7 +289,8 @@ pub async fn claim_slot(
     user: CurrentUser,
     State(state): State<AppState>,
     Path((reunion_id, block_id, slot_id)): Path<(Uuid, Uuid, Uuid)>,
-) -> AppResult<impl IntoResponse> {
+    headers: HeaderMap,
+) -> AppResult<Response> {
     let reunion = load_reunion_for_api_member(&state, &user, reunion_id).await?;
 
     // Members can sign up during active phase (and schedule phase for prep)
@@ -260,7 +308,10 @@ pub async fn claim_slot(
     }
 
     let signup = Signup::claim(state.db(), slot_id, user.id).await?;
-    Ok((StatusCode::CREATED, Json(signup)))
+    if is_htmx_request(&headers) {
+        return render_slot_row(&state, reunion_id, block_id, slot_id, user.id).await;
+    }
+    Ok((StatusCode::CREATED, Json(signup)).into_response())
 }
 
 // ── POST /reunions/:id/schedule/:block_id/slots/:slot_id/assign ──────────────
@@ -320,7 +371,8 @@ pub async fn release_slot(
     user: CurrentUser,
     State(state): State<AppState>,
     Path((reunion_id, block_id, slot_id)): Path<(Uuid, Uuid, Uuid)>,
-) -> AppResult<StatusCode> {
+    headers: HeaderMap,
+) -> AppResult<Response> {
     let reunion = load_reunion_for_api_member(&state, &user, reunion_id).await?;
 
     if !matches!(reunion.phase, Phase::PrepCompleted | Phase::Active) {
@@ -336,7 +388,10 @@ pub async fn release_slot(
     }
 
     Signup::release(state.db(), slot_id, user.id).await?;
-    Ok(StatusCode::NO_CONTENT)
+    if is_htmx_request(&headers) {
+        return render_slot_row(&state, reunion_id, block_id, slot_id, user.id).await;
+    }
+    Ok(StatusCode::NO_CONTENT.into_response())
 }
 
 #[cfg(test)]

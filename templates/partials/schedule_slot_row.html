@@ -1,0 +1,50 @@
+{# Single schedule-slot row. Rendered both inline on the schedule page and
+   as the swap response when a user joins or leaves the slot via htmx.
+
+   Variables expected in scope:
+     reunion_id     : Uuid
+     block_id       : Uuid
+     slot           : { id, role_name, description?, max_count? }
+     signups        : &[Signup] (each has user_id)
+     is_full        : bool
+     user_signed_up : bool #}
+<div id="sched-slot-{{ slot.id }}" class="mt-3 bg-gray-50 rounded-lg p-3">
+  <div class="flex items-center justify-between">
+    <div>
+      <span class="text-sm font-medium text-gray-800">{{ slot.role_name }}</span>
+      {% if let Some(sd) = slot.description %}
+      <span class="text-xs text-gray-400 ml-1">— {{ sd }}</span>
+      {% endif %}
+    </div>
+    <div class="flex items-center gap-2">
+      <span class="text-xs text-gray-400">
+        {{ signups.len() }}
+        {% if let Some(max) = slot.max_count %}/{{ max }}{% endif %}
+      </span>
+      {% if !is_full && !user_signed_up %}
+      <button hx-post="/reunions/{{ reunion_id }}/schedule/{{ block_id }}/slots/{{ slot.id }}/claim"
+              hx-target="#sched-slot-{{ slot.id }}"
+              hx-swap="outerHTML"
+              class="px-2 py-0.5 text-xs bg-amber-500 text-white rounded hover:bg-amber-600">
+        Join
+      </button>
+      {% else if user_signed_up %}
+      <button hx-delete="/reunions/{{ reunion_id }}/schedule/{{ block_id }}/slots/{{ slot.id }}/claim"
+              hx-target="#sched-slot-{{ slot.id }}"
+              hx-swap="outerHTML"
+              class="px-2 py-0.5 text-xs text-red-500 border border-red-200 rounded hover:bg-red-50">
+        Leave
+      </button>
+      {% endif %}
+    </div>
+  </div>
+  {% if !signups.is_empty() %}
+  <div class="mt-1 flex flex-wrap gap-1">
+    {% for signup in signups %}
+    <span class="text-xs bg-white border border-gray-200 rounded px-1.5 py-0.5 text-gray-600">
+      {{ signup.user_id }}
+    </span>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>

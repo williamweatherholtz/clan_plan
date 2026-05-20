@@ -23,7 +23,8 @@
     <h2 class="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">{{ day.label }}</h2>
     <div class="space-y-3">
       {% for b in day.blocks %}
-      <div class="bg-white rounded-xl border-l-4 border border-gray-100 shadow-sm p-4
+      <div id="sched-block-{{ b.block.id }}"
+           class="bg-white rounded-xl border-l-4 border border-gray-100 shadow-sm p-4
         {% if b.block.block_type.label() == "group" %}block-group
         {% else if b.block.block_type.label() == "optional" %}block-optional
         {% else %}block-meal{% endif %}">
@@ -65,7 +66,10 @@
                 Edit
               </button>
               <button
-                onclick="if(confirm('Remove this block from the schedule?'))deleteBlock('{{ reunion.id }}','{{ b.block.id }}')"
+                hx-delete="/reunions/{{ reunion.id }}/schedule/{{ b.block.id }}"
+                hx-target="#sched-block-{{ b.block.id }}"
+                hx-swap="delete"
+                hx-confirm="Remove this block from the schedule?"
                 class="px-2 py-0.5 text-xs text-red-500 border border-red-200 rounded hover:bg-red-50">
                 Remove
               </button>
@@ -86,44 +90,15 @@
         </div>
         {% endif %}
 
-        <!-- Signup slots -->
-        {% for slot in b.slots %}
-        <div class="mt-3 bg-gray-50 rounded-lg p-3">
-          <div class="flex items-center justify-between">
-            <div>
-              <span class="text-sm font-medium text-gray-800">{{ slot.slot.role_name }}</span>
-              {% if let Some(sd) = slot.slot.description %}
-              <span class="text-xs text-gray-400 ml-1">— {{ sd }}</span>
-              {% endif %}
-            </div>
-            <div class="flex items-center gap-2">
-              <span class="text-xs text-gray-400">
-                {{ slot.signups.len() }}
-                {% if let Some(max) = slot.slot.max_count %}/{{ max }}{% endif %}
-              </span>
-              {% if !slot.is_full && !slot.user_signed_up %}
-              <button onclick="claimSlot('{{ reunion.id }}','{{ b.block.id }}','{{ slot.slot.id }}')"
-                      class="px-2 py-0.5 text-xs bg-amber-500 text-white rounded hover:bg-amber-600">
-                Join
-              </button>
-              {% else if slot.user_signed_up %}
-              <button onclick="releaseSlot('{{ reunion.id }}','{{ b.block.id }}','{{ slot.slot.id }}')"
-                      class="px-2 py-0.5 text-xs text-red-500 border border-red-200 rounded hover:bg-red-50">
-                Leave
-              </button>
-              {% endif %}
-            </div>
-          </div>
-          {% if !slot.signups.is_empty() %}
-          <div class="mt-1 flex flex-wrap gap-1">
-            {% for signup in slot.signups %}
-            <span class="text-xs bg-white border border-gray-200 rounded px-1.5 py-0.5 text-gray-600">
-              {{ signup.user_id }}
-            </span>
-            {% endfor %}
-          </div>
-          {% endif %}
-        </div>
+        <!-- Signup slots — htmx-driven via partial -->
+        {% for slot_view in b.slots %}
+        {% let reunion_id = reunion.id %}
+        {% let block_id = b.block.id %}
+        {% let slot = slot_view.slot.clone() %}
+        {% let signups = slot_view.signups.as_slice() %}
+        {% let is_full = slot_view.is_full %}
+        {% let user_signed_up = slot_view.user_signed_up %}
+        {% include "partials/schedule_slot_row.html" %}
         {% endfor %}
       </div>
       {% endfor %}
