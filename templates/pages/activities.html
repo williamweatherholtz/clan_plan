@@ -78,7 +78,7 @@
 <!-- ── Activity list ─────────────────────────────────────────────────────────── -->
 <div id="act-list" class="space-y-2">
 {% for a in activities %}
-<div class="card overflow-hidden"
+<div id="act-card-{{ a.idea.id }}" class="card overflow-hidden"
      data-id="{{ a.idea.id }}"
      data-index="{{ loop.index0 }}"
      data-category="{{ a.idea.category }}"
@@ -174,11 +174,22 @@
 
     <!-- Comments (auto-loaded on expand) -->
     <div id="comments-{{ a.idea.id }}" class="mb-3">
-      <div id="comments-list-{{ a.idea.id }}" class="space-y-2 mb-3 text-sm">
+      <!-- Comments list: htmx fetches when the card body becomes visible
+           (toggleCard removes the .hidden class on the parent). Server
+           returns the rendered partial via list_comments content-negotiation. -->
+      <div id="comments-list-{{ a.idea.id }}"
+           class="space-y-2 mb-3 text-sm"
+           hx-get="/reunions/{{ reunion.id }}/activities/{{ a.idea.id }}/comments"
+           hx-trigger="revealed once"
+           hx-swap="innerHTML">
         <p class="text-xs text-gray-400 italic">Loading comments…</p>
       </div>
-      <form onsubmit="submitComment(event,'{{ a.idea.id }}','{{ reunion.id }}')" class="flex gap-2">
-        <input type="text" id="comment-input-{{ a.idea.id }}"
+      <form hx-post="/reunions/{{ reunion.id }}/activities/{{ a.idea.id }}/comments"
+            hx-target="#comments-list-{{ a.idea.id }}"
+            hx-swap="innerHTML"
+            hx-on::after-request="this.querySelector('input[name=content]').value = ''"
+            class="flex gap-2">
+        <input type="text" name="content"
                placeholder="Add a comment…"
                class="flex-1 px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400">
         <button type="submit"
@@ -223,7 +234,10 @@
         </button>
       {% endif %}
 
-      <button onclick="if(confirm('Delete this activity idea? This cannot be undone.'))apiFetch('DELETE','/reunions/{{ reunion.id }}/activities/{{ a.idea.id }}').then(()=>location.reload()).catch(e=>showToast(e.message,'error'))"
+      <button hx-delete="/reunions/{{ reunion.id }}/activities/{{ a.idea.id }}"
+              hx-confirm="Delete this activity idea? This cannot be undone."
+              hx-target="#act-card-{{ a.idea.id }}"
+              hx-swap="delete"
               class="px-2 py-1 text-xs text-rose-600 border border-rose-200 rounded hover:bg-rose-50 ml-auto">
         Delete
       </button>

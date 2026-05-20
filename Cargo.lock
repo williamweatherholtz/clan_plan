@@ -413,6 +413,7 @@ dependencies = [
  "rust-embed",
  "serde",
  "serde_json",
+ "serde_urlencoded",
  "sqlx",
  "subtle",
  "thiserror 1.0.69",

@@ -41,6 +41,14 @@ struct RsvpBlockPartial<'a> {
     unset_label: &'a str,
 }
 
+#[derive(Template)]
+#[template(path = "partials/comments_list.html")]
+struct CommentsListPartial<'a> {
+    reunion_id: Uuid,
+    idea_id: Uuid,
+    comments: &'a [CommentResponseView],
+}
+
 fn is_htmx_request(headers: &HeaderMap) -> bool {
     headers
         .get("HX-Request")
@@ -215,14 +223,30 @@ pub async fn create_comment(
     user: CurrentUser,
     State(state): State<AppState>,
     Path((reunion_id, act_id)): Path<(Uuid, Uuid)>,
-    Json(body): Json<CommentRequest>,
-) -> AppResult<impl IntoResponse> {
+    headers: HeaderMap,
+    body: axum::body::Bytes,
+) -> AppResult<Response> {
     load_reunion_for_api_member(&state, &user, reunion_id).await?;
 
-    if body.content.trim().is_empty() {
+    // Accept either JSON (existing API callers) or form-encoded (htmx default
+    // form submission) based on Content-Type. The htmx <form hx-post> sends
+    // application/x-www-form-urlencoded.
+    let ct = headers
+        .get(axum::http::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    let req: CommentRequest = if ct.starts_with("application/json") {
+        serde_json::from_slice(&body)
+            .map_err(|e| AppError::BadRequest(format!("invalid JSON: {e}").into()))?
+    } else {
+        serde_urlencoded::from_bytes(&body)
+            .map_err(|e| AppError::BadRequest(format!("invalid form body: {e}").into()))?
+    };
+
+    if req.content.trim().is_empty() {
         return Err(AppError::BadRequest("comment cannot be empty".into()));
     }
-    if body.content.len() > 2_000 {
+    if req.content.len() > 2_000 {
         return Err(AppError::BadRequest("comment cannot exceed 2,000 characters".into()));
     }
 
@@ -232,8 +256,36 @@ pub async fn create_comment(
     }
 
     let comment =
-        ActivityComment::create(state.db(), act_id, user.id, body.content.trim()).await?;
-    Ok((StatusCode::CREATED, Json(comment)))
+        ActivityComment::create(state.db(), act_id, user.id, req.content.trim()).await?;
+
+    // htmx: return the freshly-rendered comments list (with the new comment
+    // appended) so the client swaps the whole list. JSON callers get the
+    // raw created comment back, same as before.
+    if is_htmx_request(&headers) {
+        let comments = ActivityComment::list_with_names(state.db(), act_id).await?;
+        let enriched: Vec<CommentResponseView> = comments
+            .into_iter()
+            .map(|c| CommentResponseView {
+                is_mine: c.user_id == user.id,
+                id: c.id,
+                activity_idea_id: c.activity_idea_id,
+                user_id: c.user_id,
+                content: c.content,
+                created_at: c.created_at,
+                display_name: c.display_name,
+            })
+            .collect();
+        let tpl = CommentsListPartial {
+            reunion_id,
+            idea_id: act_id,
+            comments: &enriched,
+        };
+        let html = tpl
+            .render()
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("comments partial render: {e}")))?;
+        return Ok(Html(html).into_response());
+    }
+    Ok((StatusCode::CREATED, Json(comment)).into_response())
 }
 
 // ── DELETE /reunions/:id/activities/:act_id/comments/:cmt_id ─────────────────
@@ -437,7 +489,8 @@ pub async fn list_comments(
     user: CurrentUser,
     State(state): State<AppState>,
     Path((reunion_id, act_id)): Path<(Uuid, Uuid)>,
-) -> AppResult<impl IntoResponse> {
+    headers: HeaderMap,
+) -> AppResult<Response> {
     load_reunion_for_api_member(&state, &user, reunion_id).await?;
 
     let idea = ActivityIdea::find_by_id(state.db(), act_id).await?;
@@ -458,7 +511,19 @@ pub async fn list_comments(
             display_name: c.display_name,
         })
         .collect();
-    Ok(Json(enriched))
+
+    if is_htmx_request(&headers) {
+        let tpl = CommentsListPartial {
+            reunion_id,
+            idea_id: act_id,
+            comments: &enriched,
+        };
+        let body = tpl
+            .render()
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("comments partial render: {e}")))?;
+        return Ok(Html(body).into_response());
+    }
+    Ok(Json(enriched).into_response())
 }
 
 // ── PUT/DELETE /reunions/:id/activities/:act_id/rsvp ──────────────────────────
