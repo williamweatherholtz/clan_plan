@@ -1523,25 +1523,78 @@ pub async fn locations_page(
     let candidates = LocationCandidate::list_for_reunion(state.db(), reunion_id)
         .await?;
 
+    // Bulk-fetch aggregates, my-vote, and ra-votes for the entire reunion's
+    // candidate set in 2 (or 3, if RA) round trips instead of 2N (or 3N).
+    let aggregates: Vec<(Uuid, Option<f64>, i64)> = sqlx::query_as(
+        "SELECT lc.id, AVG(lv.score::float), COUNT(lv.score)
+         FROM location_candidates lc
+         LEFT JOIN location_votes lv ON lv.location_candidate_id = lc.id
+         WHERE lc.reunion_id = $1
+         GROUP BY lc.id",
+    )
+    .bind(reunion_id)
+    .fetch_all(state.db())
+    .await
+    .unwrap_or_default();
+    let aggregate_map: std::collections::HashMap<Uuid, (Option<f64>, i64)> = aggregates
+        .into_iter()
+        .map(|(id, avg, count)| (id, (avg, count)))
+        .collect();
+
+    let my_votes: Vec<(Uuid, i16, Option<String>)> = sqlx::query_as(
+        "SELECT lv.location_candidate_id, lv.score, lv.comment
+         FROM location_votes lv
+         JOIN location_candidates lc ON lc.id = lv.location_candidate_id
+         WHERE lc.reunion_id = $1 AND lv.user_id = $2",
+    )
+    .bind(reunion_id)
+    .bind(user.id)
+    .fetch_all(state.db())
+    .await
+    .unwrap_or_default();
+    let my_vote_map: std::collections::HashMap<Uuid, (i16, Option<String>)> =
+        my_votes.into_iter().map(|(id, s, c)| (id, (s, c))).collect();
+
+    let mut ra_votes_map: std::collections::HashMap<Uuid, Vec<crate::models::location::VoteWithName>> =
+        std::collections::HashMap::new();
+    if is_ra {
+        let rows: Vec<(Uuid, String, i16, Option<String>)> = sqlx::query_as(
+            "SELECT lv.location_candidate_id, u.display_name, lv.score, lv.comment
+             FROM location_votes lv
+             JOIN users u ON u.id = lv.user_id
+             JOIN location_candidates lc ON lc.id = lv.location_candidate_id
+             WHERE lc.reunion_id = $1
+             ORDER BY lv.score DESC, u.display_name",
+        )
+        .bind(reunion_id)
+        .fetch_all(state.db())
+        .await
+        .unwrap_or_default();
+        for (cand_id, display_name, score, comment) in rows {
+            ra_votes_map
+                .entry(cand_id)
+                .or_default()
+                .push(crate::models::location::VoteWithName {
+                    display_name,
+                    score,
+                    comment,
+                });
+        }
+    }
+
     let mut locations = Vec::new();
     for c in candidates {
-        let (avg_score, vote_count, my_vote) =
-            LocationVote::aggregate_for_candidate(state.db(), c.id, user.id).await.unwrap_or((None, 0, None));
+        let (avg_score, vote_count) = aggregate_map.get(&c.id).cloned().unwrap_or((None, 0));
         let avg_score_str = if votes_revealed {
             avg_score.map(|v| format!("{:.1}", v)).unwrap_or_default()
         } else {
             String::new()
         };
         let selected = reunion.selected_location_id == Some(c.id);
-        let my_vote_score = my_vote.as_ref().map(|v| v.score);
-        let my_vote_comment = my_vote.and_then(|v| v.comment);
-        let ra_votes = if is_ra {
-            LocationVote::votes_with_names_for_candidate(state.db(), c.id)
-                .await
-                .unwrap_or_default()
-        } else {
-            Vec::new()
-        };
+        let my_vote = my_vote_map.get(&c.id).cloned();
+        let my_vote_score = my_vote.as_ref().map(|(s, _)| *s);
+        let my_vote_comment = my_vote.and_then(|(_, c)| c);
+        let ra_votes = ra_votes_map.remove(&c.id).unwrap_or_default();
         locations.push(LocationPageView {
             candidate: c,
             avg_score_str,
@@ -1594,15 +1647,51 @@ pub async fn schedule_page(
             .map(|s| s.signup_slot_id)
             .collect();
 
+    // Bulk-fetch every slot and every signup for the whole reunion so the
+    // per-block / per-slot loops below do zero DB work. Was 1 + B*(1+S)
+    // round trips (B blocks each with S slots); now 2 regardless of B/S.
+    let all_slots: Vec<SignupSlot> = sqlx::query_as(
+        "SELECT s.*
+         FROM signup_slots s
+         JOIN schedule_blocks b ON b.id = s.schedule_block_id
+         WHERE b.reunion_id = $1
+         ORDER BY s.created_at",
+    )
+    .bind(reunion_id)
+    .fetch_all(state.db())
+    .await
+    .unwrap_or_default();
+    let mut slots_by_block: std::collections::HashMap<Uuid, Vec<SignupSlot>> =
+        std::collections::HashMap::new();
+    for s in all_slots {
+        slots_by_block.entry(s.schedule_block_id).or_default().push(s);
+    }
+
+    let all_signups: Vec<Signup> = sqlx::query_as(
+        "SELECT sg.*
+         FROM signups sg
+         JOIN signup_slots ss ON ss.id = sg.signup_slot_id
+         JOIN schedule_blocks b ON b.id = ss.schedule_block_id
+         WHERE b.reunion_id = $1
+         ORDER BY sg.created_at",
+    )
+    .bind(reunion_id)
+    .fetch_all(state.db())
+    .await
+    .unwrap_or_default();
+    let mut signups_by_slot: std::collections::HashMap<Uuid, Vec<Signup>> =
+        std::collections::HashMap::new();
+    for sg in all_signups {
+        signups_by_slot.entry(sg.signup_slot_id).or_default().push(sg);
+    }
+
     // Build page view blocks with user_signed_up per slot
     let mut days: Vec<ScheduleDay> = Vec::new();
     for block in blocks {
-        let slots_raw = SignupSlot::list_for_block(state.db(), block.id)
-            .await?;
+        let slots_raw = slots_by_block.remove(&block.id).unwrap_or_default();
         let mut slot_views = Vec::new();
         for slot in slots_raw {
-            let signups = Signup::list_for_slot(state.db(), slot.id)
-                .await?;
+            let signups = signups_by_slot.remove(&slot.id).unwrap_or_default();
             let signup_count = signups.len() as i32;
             let is_full = slot.max_count.map(|m| signup_count >= m).unwrap_or(false);
             let user_signed_up = user_signup_slot_ids.contains(&slot.id);

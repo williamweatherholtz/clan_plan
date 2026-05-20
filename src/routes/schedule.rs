@@ -48,28 +48,59 @@ pub async fn get_schedule(
     load_reunion_for_api_member(&state, &user, reunion_id).await?;
 
     let blocks = ScheduleBlock::list_for_reunion(state.db(), reunion_id).await?;
-    let mut result: Vec<BlockWithSlots> = Vec::with_capacity(blocks.len());
 
-    for block in blocks {
-        let slots_raw = SignupSlot::list_for_block(state.db(), block.id).await?;
-        let mut slots_with_signups = Vec::with_capacity(slots_raw.len());
-
-        for slot in slots_raw {
-            let signups = Signup::list_for_slot(state.db(), slot.id).await?;
-            let signup_count = signups.len() as i32;
-            let is_full = slot.max_count.map(|m| signup_count >= m).unwrap_or(false);
-            slots_with_signups.push(SlotWithSignups {
-                slot,
-                signups,
-                is_full,
-            });
-        }
-
-        result.push(BlockWithSlots {
-            block,
-            slots: slots_with_signups,
-        });
+    // Bulk-fetch every slot and every signup for the reunion in 2 queries,
+    // group in Rust. Previously: 1 + B + B*S round trips for B blocks of S
+    // slots each.
+    let all_slots: Vec<SignupSlot> = sqlx::query_as(
+        "SELECT s.*
+         FROM signup_slots s
+         JOIN schedule_blocks b ON b.id = s.schedule_block_id
+         WHERE b.reunion_id = $1
+         ORDER BY s.created_at",
+    )
+    .bind(reunion_id)
+    .fetch_all(state.db())
+    .await?;
+    let mut slots_by_block: std::collections::HashMap<Uuid, Vec<SignupSlot>> =
+        std::collections::HashMap::new();
+    for s in all_slots {
+        slots_by_block.entry(s.schedule_block_id).or_default().push(s);
     }
+
+    let all_signups: Vec<Signup> = sqlx::query_as(
+        "SELECT sg.*
+         FROM signups sg
+         JOIN signup_slots ss   ON ss.id = sg.signup_slot_id
+         JOIN schedule_blocks b ON b.id  = ss.schedule_block_id
+         WHERE b.reunion_id = $1
+         ORDER BY sg.created_at",
+    )
+    .bind(reunion_id)
+    .fetch_all(state.db())
+    .await?;
+    let mut signups_by_slot: std::collections::HashMap<Uuid, Vec<Signup>> =
+        std::collections::HashMap::new();
+    for sg in all_signups {
+        signups_by_slot.entry(sg.signup_slot_id).or_default().push(sg);
+    }
+
+    let result: Vec<BlockWithSlots> = blocks
+        .into_iter()
+        .map(|block| {
+            let slots_raw = slots_by_block.remove(&block.id).unwrap_or_default();
+            let slots_with_signups = slots_raw
+                .into_iter()
+                .map(|slot| {
+                    let signups = signups_by_slot.remove(&slot.id).unwrap_or_default();
+                    let signup_count = signups.len() as i32;
+                    let is_full = slot.max_count.map(|m| signup_count >= m).unwrap_or(false);
+                    SlotWithSignups { slot, signups, is_full }
+                })
+                .collect();
+            BlockWithSlots { block, slots: slots_with_signups }
+        })
+        .collect();
 
     Ok(Json(result))
 }
