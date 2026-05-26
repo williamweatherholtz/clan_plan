@@ -12,10 +12,16 @@
       live · refreshes every 30 seconds.
     </p>
   </div>
-  <div class="flex items-center gap-3">
+  <div class="flex items-center gap-3 flex-wrap justify-end">
     <span id="sse-status" class="inline-flex items-center gap-1.5 text-xs font-medium" style="color: var(--moss);">
       <span class="w-2 h-2 rounded-full animate-pulse" style="background: var(--moss);"></span> Live
     </span>
+    <a href="/api/reunions/{{ reunion.id }}/schedule.ics"
+       class="inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-md hover:bg-wash transition-colors"
+       style="color: var(--text); border: 1px solid var(--border);"
+       title="Download the full reunion schedule as an .ics calendar file">
+      📅 .ics
+    </a>
     <label class="flex items-center gap-1.5 text-xs cursor-pointer select-none smallcaps">
       <input type="checkbox" id="use24h" onchange="toggle24h(this.checked)">
       24h
