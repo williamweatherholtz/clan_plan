@@ -746,10 +746,16 @@ async function openScheduleActivity(btn) {
 document.getElementById('schedule-act-date')
   ?.addEventListener('change', renderDayPreview);
 
+// Adds `mins` to a "HH:MM" start time. Returns null if the result would
+// cross midnight — the backend rejects blocks where end <= start, and an
+// overnight block isn't representable in the current schema (single
+// block_date + start/end times). Caller is expected to surface a clear
+// error rather than letting the backend reject with a confusing message.
 function addMinutes(timeStr, mins) {
   const [h, m] = timeStr.split(':').map(Number);
   const total = h * 60 + m + mins;
-  const hh = String(Math.floor(total / 60) % 24).padStart(2, '0');
+  if (total >= 24 * 60) return null;
+  const hh = String(Math.floor(total / 60)).padStart(2, '0');
   const mm = String(total % 60).padStart(2, '0');
   return `${hh}:${mm}`;
 }
@@ -774,6 +780,14 @@ document.getElementById('schedule-act-form').addEventListener('submit', async (e
   const durationInput = document.getElementById('schedule-act-duration').value;
   const durationMins = durationInput ? parseInt(durationInput, 10) : {{ default_activity_minutes }};
   const endTime = addMinutes(startTime, durationMins);
+  if (endTime === null) {
+    showToast(
+      `Duration too long: ${durationMins} min from ${startTime} would run past midnight. ` +
+      `Pick a shorter duration or an earlier start time.`,
+      'error'
+    );
+    return;
+  }
   try {
     const block = await apiFetch('POST', '/reunions/{{ reunion.id }}/schedule', {
       title:         document.getElementById('schedule-act-subtitle').textContent,
