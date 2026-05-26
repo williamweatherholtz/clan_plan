@@ -174,6 +174,40 @@ impl ScheduleBlock {
     }
 }
 
+// ── Tombstones for cancelled schedule blocks ──────────────────────────────────
+//
+// Populated in the same transaction that deletes a `schedule_blocks` row, so
+// the next .ics export can emit a STATUS:CANCELLED VEVENT with the same UID
+// and prompt subscribed calendars to remove the event. See migration 022 for
+// the design rationale.
+
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct CancelledScheduleBlock {
+    pub id: Uuid,
+    pub reunion_id: Uuid,
+    pub block_date: NaiveDate,
+    pub start_time: NaiveTime,
+    pub end_time: NaiveTime,
+    pub title: String,
+    pub cancelled_at: DateTime<Utc>,
+}
+
+impl CancelledScheduleBlock {
+    pub async fn list_for_reunion(
+        pool: &PgPool,
+        reunion_id: Uuid,
+    ) -> AppResult<Vec<CancelledScheduleBlock>> {
+        Ok(sqlx::query_as::<_, CancelledScheduleBlock>(
+            "SELECT * FROM cancelled_schedule_blocks
+             WHERE reunion_id = $1
+             ORDER BY cancelled_at",
+        )
+        .bind(reunion_id)
+        .fetch_all(pool)
+        .await?)
+    }
+}
+
 // ── SignupSlot queries ─────────────────────────────────────────────────────────
 
 impl SignupSlot {

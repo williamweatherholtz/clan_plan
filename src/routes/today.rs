@@ -18,7 +18,7 @@ use crate::{
     error::AppResult,
     models::{
         location::LocationCandidate,
-        schedule::{ScheduleBlock, Signup, SignupSlot},
+        schedule::{CancelledScheduleBlock, ScheduleBlock, Signup, SignupSlot},
     },
     state::AppState,
 };
@@ -86,6 +86,7 @@ pub async fn get_ics(
 ) -> AppResult<impl IntoResponse> {
     let reunion = load_reunion_for_api_member(&state, &user, reunion_id).await?;
     let blocks = ScheduleBlock::list_for_reunion(state.db(), reunion_id).await?;
+    let cancelled = CancelledScheduleBlock::list_for_reunion(state.db(), reunion_id).await?;
     let tz_str = get_reunion_tz_string(&state, &reunion).await;
     let tz: Tz = tz_str.parse().unwrap_or(chrono_tz::UTC);
 
@@ -152,13 +153,25 @@ pub async fn get_ics(
         }
         let desc = desc_parts.join("\\n");
 
+        // SEQUENCE (§3.8.7.4) + LAST-MODIFIED (§3.8.7.3) are what tell a
+        // subscribed calendar "this is a newer revision of an event you've
+        // already imported by UID, apply the changes." Without them many
+        // clients silently ignore re-imported events. We use updated_at's
+        // unix-epoch seconds for SEQUENCE — it's monotonically non-decreasing
+        // per block (the DB sets it on every UPDATE), so the value only ever
+        // climbs across edits.
+        let sequence  = block.updated_at.timestamp();
+        let last_mod  = block.updated_at.format("%Y%m%dT%H%M%SZ");
+
         ics.push_str(&format!(
             "BEGIN:VEVENT\r\n\
              UID:{id}@clanplan\r\n\
              DTSTAMP:{dtstamp}\r\n\
              DTSTART:{dtstart}\r\n\
              DTEND:{dtend}\r\n\
-             SUMMARY:{summary}\r\n",
+             SUMMARY:{summary}\r\n\
+             SEQUENCE:{sequence}\r\n\
+             LAST-MODIFIED:{last_mod}\r\n",
             id = block.id,
         ));
         if !desc.is_empty() {
@@ -168,6 +181,36 @@ pub async fn get_ics(
             ics.push_str(&format!("LOCATION:{location}\r\n"));
         }
         ics.push_str("END:VEVENT\r\n");
+    }
+
+    // Tombstones — emit a STATUS:CANCELLED VEVENT for every block that has
+    // been deleted since the calendar was first imported. Calendars match by
+    // UID and remove the event when STATUS:CANCELLED + a higher SEQUENCE
+    // arrives, so subscribers don't keep stale ghost events.
+    //
+    // RFC 5545 §3.6.1: even cancellations need DTSTART/DTEND/SUMMARY so a
+    // client can render and identify the event before honoring the status.
+    // We snapshotted those at deletion time in cancelled_schedule_blocks.
+    for c in &cancelled {
+        let dtstart  = local_to_utc(c.block_date, c.start_time, tz);
+        let dtend    = local_to_utc(c.block_date, c.end_time,   tz);
+        let summary  = escape_ics(&c.title);
+        let sequence = c.cancelled_at.timestamp();
+        let last_mod = c.cancelled_at.format("%Y%m%dT%H%M%SZ");
+
+        ics.push_str(&format!(
+            "BEGIN:VEVENT\r\n\
+             UID:{id}@clanplan\r\n\
+             DTSTAMP:{dtstamp}\r\n\
+             DTSTART:{dtstart}\r\n\
+             DTEND:{dtend}\r\n\
+             SUMMARY:{summary}\r\n\
+             SEQUENCE:{sequence}\r\n\
+             LAST-MODIFIED:{last_mod}\r\n\
+             STATUS:CANCELLED\r\n\
+             END:VEVENT\r\n",
+            id = c.id,
+        ));
     }
 
     ics.push_str("END:VCALENDAR\r\n");

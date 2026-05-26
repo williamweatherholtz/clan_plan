@@ -238,16 +238,46 @@ pub async fn delete_block(
         return Err(AppError::Forbidden);
     }
 
-    ScheduleBlock::delete(state.db(), block_id).await?;
+    // One transaction: tombstone the block (so the next .ics export emits a
+    // STATUS:CANCELLED VEVENT for it), delete it from schedule_blocks, and
+    // demote any activity that was promoted into it. If any step fails the
+    // block stays live and no half-state leaks.
+    let mut tx = state.db().begin().await?;
 
-    // Reset any activity that was promoted to this block
+    sqlx::query(
+        "INSERT INTO cancelled_schedule_blocks
+            (id, reunion_id, block_date, start_time, end_time, title)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT (id) DO UPDATE SET
+            block_date   = EXCLUDED.block_date,
+            start_time   = EXCLUDED.start_time,
+            end_time     = EXCLUDED.end_time,
+            title        = EXCLUDED.title,
+            cancelled_at = NOW()",
+    )
+    .bind(block.id)
+    .bind(block.reunion_id)
+    .bind(block.block_date)
+    .bind(block.start_time)
+    .bind(block.end_time)
+    .bind(&block.title)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query("DELETE FROM schedule_blocks WHERE id = $1")
+        .bind(block_id)
+        .execute(&mut *tx)
+        .await?;
+
     sqlx::query(
         "UPDATE activity_ideas SET status = 'proposed', promoted_to_block_id = NULL, updated_at = NOW() \
          WHERE promoted_to_block_id = $1",
     )
     .bind(block_id)
-    .execute(state.db())
+    .execute(&mut *tx)
     .await?;
+
+    tx.commit().await?;
 
     Ok(StatusCode::NO_CONTENT)
 }
