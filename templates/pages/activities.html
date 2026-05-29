@@ -98,7 +98,12 @@
   <button onclick="toggleCard('{{ a.idea.id }}','{{ reunion.id }}')"
           class="w-full text-left px-4 py-3 flex items-center justify-between gap-3 hover:bg-gray-50 transition-colors">
     <div class="flex items-center gap-2 flex-wrap min-w-0">
-      <span class="font-semibold text-gray-900 truncate">{{ a.idea.title }}</span>
+      <!-- Marquee: the inner span auto-scrolls horizontally when the title
+           overflows its container. JS in activateMarquees() measures
+           scrollWidth vs clientWidth after layout and toggles .is-marquee. -->
+      <span class="marquee-wrap font-semibold text-gray-900 min-w-0 flex-1">
+        <span class="marquee-inner" title="{{ a.idea.title }}">{{ a.idea.title }}</span>
+      </span>
 
       <!-- Category badge -->
       {% if a.idea.category == "group" %}
@@ -439,6 +444,43 @@
 }
 .fchip:hover { border-color: #fbbf24; color: #d97706; }
 .fchip.on  { border-color: #fbbf24; background: #fffbeb; color: #b45309; font-weight: 600; }
+
+/* ── Activity title marquee ──────────────────────────────────────────────────
+   The card header is single-line by design so cards stack at a uniform
+   height. When a title is longer than its allotted space, the inner span
+   ping-pongs horizontally so users can read the whole thing without
+   tapping to expand. JS adds .is-marquee + the per-card translate distance
+   only when overflow is actually detected. */
+.marquee-wrap {
+  display: inline-block;
+  overflow: hidden;
+  white-space: nowrap;
+  position: relative;
+  /* Subtle fade on the right edge as a hint that more text exists.
+     The fade is only visible while .is-marquee is set (overflow case). */
+  --marquee-end: 0px;
+  --marquee-duration: 12s;
+}
+.marquee-wrap > .marquee-inner {
+  display: inline-block;
+  will-change: transform;
+}
+.marquee-wrap.is-marquee {
+  -webkit-mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 18px), transparent 100%);
+          mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 18px), transparent 100%);
+}
+.marquee-wrap.is-marquee > .marquee-inner {
+  animation: marquee-pingpong var(--marquee-duration) ease-in-out infinite;
+}
+@keyframes marquee-pingpong {
+  0%, 15%   { transform: translateX(0); }
+  50%, 65%  { transform: translateX(var(--marquee-end)); }
+  100%      { transform: translateX(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .marquee-wrap.is-marquee > .marquee-inner { animation: none; }
+  /* Reduced-motion users still see the fade hint that the text is truncated. */
+}
 </style>
 
 <script>
@@ -517,7 +559,51 @@ function applyF() {
 
   const noResults = document.getElementById('act-no-results');
   if (noResults) noResults.style.display = shown === 0 ? '' : 'none';
+
+  // Re-measure titles for marquee — cards that were display:none had
+  // zero-width containers so the previous measurement was useless.
+  activateMarquees();
 }
+
+// ── Title marquee ────────────────────────────────────────────────────────────
+// Walks every .marquee-wrap and toggles .is-marquee + sets the per-card
+// translate distance based on actual overflow. Idempotent — safe to call
+// after filter/sort/resize.
+function activateMarquees(root) {
+  const wraps = (root || document).querySelectorAll('.marquee-wrap');
+  wraps.forEach(wrap => {
+    const inner = wrap.querySelector('.marquee-inner');
+    if (!inner) return;
+    // Reset before measuring so the previous transform doesn't bias scrollWidth.
+    wrap.classList.remove('is-marquee');
+    wrap.style.setProperty('--marquee-end', '0px');
+    // Skip hidden cards — clientWidth would be 0 and we'd falsely flag overflow.
+    if (wrap.clientWidth === 0) return;
+    const overflow = inner.scrollWidth - wrap.clientWidth;
+    if (overflow <= 4) return;  // ignore sub-pixel rounding noise
+    // Duration scales with distance so long titles aren't blink-fast and
+    // short overflows aren't tediously slow. Clamped to a comfortable range.
+    const dur = Math.max(6, Math.min(20, 4 + overflow / 30));
+    wrap.style.setProperty('--marquee-end', `-${overflow}px`);
+    wrap.style.setProperty('--marquee-duration', `${dur}s`);
+    wrap.classList.add('is-marquee');
+  });
+}
+
+// Initial pass once fonts have loaded so scrollWidth is accurate.
+if (document.fonts && document.fonts.ready) {
+  document.fonts.ready.then(() => activateMarquees());
+} else {
+  window.addEventListener('load', () => activateMarquees());
+}
+
+// Re-measure on viewport changes (mobile rotation, desktop resize, etc.).
+// Debounced to avoid thrash during continuous resize.
+let _marqueeResizeTimer = null;
+window.addEventListener('resize', () => {
+  clearTimeout(_marqueeResizeTimer);
+  _marqueeResizeTimer = setTimeout(() => activateMarquees(), 150);
+});
 
 function syncUI() {
   const s = getF();
