@@ -10,6 +10,7 @@ pub mod locations;
 pub mod media;
 pub mod pages;
 pub mod reunions;
+pub mod rules;
 pub mod schedule;
 pub mod today;
 
@@ -142,6 +143,10 @@ pub fn reunions_router() -> Router<AppState> {
                                            patch(feedback::update_survey_response)
                                           .delete(feedback::delete_survey_response))
         .route("/:id/survey/responses",    get(feedback::list_survey_responses))
+        // ── Rules pane (per-reunion long-form doc + comment thread) ───────────
+        .route("/:id/rules",                       patch(rules::update_rules))
+        .route("/:id/rules/comments",              post(rules::create_comment))
+        .route("/:id/rules/comments/:cmt_id",      delete(rules::delete_comment))
 }
 
 pub fn pages_router() -> Router<AppState> {
@@ -172,6 +177,7 @@ pub fn pages_router() -> Router<AppState> {
         .route("/reunions/:id/media",               get(pages::media_page))
         .route("/reunions/:id/expenses",            get(pages::expenses_page))
         .route("/reunions/:id/survey",              get(pages::survey_page))
+        .route("/reunions/:id/rules",               get(pages::rules_page))
         .route("/reunions/:id/settings",            get(pages::settings_page))
         // Slug-based aliases: /r/:slug/... mirrors /reunions/:id/...
         .route("/r/:slug",                          get(pages::reunion_overview))
@@ -183,5 +189,6 @@ pub fn pages_router() -> Router<AppState> {
         .route("/r/:slug/media",                    get(pages::media_page))
         .route("/r/:slug/expenses",                 get(pages::expenses_page))
         .route("/r/:slug/survey",                   get(pages::survey_page))
+        .route("/r/:slug/rules",                    get(pages::rules_page))
         .route("/r/:slug/settings",                 get(pages::settings_page))
 }

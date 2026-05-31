@@ -58,6 +58,11 @@ reqwest = { version = "0.11", features = ["json"] }
 zip = "2"
 time = "0.3"
 
+# Markdown rendering for the per-reunion rules pane. Default options have
+# `allow_dangerous_html: false` and a safe URL-scheme allowlist, so user
+# input can't smuggle <script> tags or javascript: links into the output.
+markdown = "1.0"
+
 # Logging / tracing
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

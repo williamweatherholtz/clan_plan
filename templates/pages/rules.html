@@ -1,0 +1,156 @@
+{% extends "layout_reunion.html" %}
+
+{% block title %}{{ tab_label }} — {{ reunion.title }}{% endblock %}
+
+{% block reunion_content %}
+<div class="flex items-end justify-between mb-6 flex-wrap gap-3">
+  <div>
+    <h1 class="text-2xl font-bold" style="color: var(--text);">{{ tab_label }}</h1>
+    {% if is_ra %}
+    <p class="mt-1 text-sm" style="color: var(--muted);">
+      Edit the label and the body below. Members can comment with thoughts or proposed changes.
+    </p>
+    {% else %}
+    <p class="mt-1 text-sm" style="color: var(--muted);">
+      Set by your reunion organiser. Have a thought? Add a comment.
+    </p>
+    {% endif %}
+  </div>
+  {% if is_ra %}
+  <button onclick="document.getElementById('edit-rules-modal').classList.remove('hidden'); initRulesEditor();"
+          class="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold rounded-lg">
+    Edit
+  </button>
+  {% endif %}
+</div>
+
+<!-- ── Body ─────────────────────────────────────────────────────────────────── -->
+<div class="card p-5 mb-6">
+  {% if body_html.is_empty() %}
+  <div class="text-center py-10" style="color: var(--muted);">
+    <p class="text-3xl mb-2">📜</p>
+    <p>No {{ tab_label|lower }} written yet.</p>
+    {% if is_ra %}
+    <p class="text-sm mt-2">Tap <span class="font-semibold">Edit</span> above to add some.</p>
+    {% endif %}
+  </div>
+  {% else %}
+  <div class="prose-rules">{{ body_html|safe }}</div>
+  {% endif %}
+</div>
+
+<!-- ── Discussion ────────────────────────────────────────────────────────────── -->
+<div>
+  <h2 class="text-lg font-semibold mb-3" style="color: var(--text);">Discussion</h2>
+
+  <form hx-post="/api/reunions/{{ reunion.id }}/rules/comments"
+        hx-target="#rules-comments-list"
+        hx-swap="outerHTML"
+        hx-on::after-request="if (event.detail.successful) this.reset();"
+        class="card p-3 mb-4">
+    <textarea name="content" rows="2" required maxlength="2000"
+              placeholder="Add a comment or proposed change…"
+              class="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+              style="border-color: var(--border);"></textarea>
+    <div class="mt-2 flex justify-end">
+      <button type="submit" class="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold rounded-md">
+        Post
+      </button>
+    </div>
+  </form>
+
+  {% let reunion_id = reunion.id %}
+  {% include "partials/rules_comments_list.html" %}
+</div>
+
+<!-- ── Edit modal (RA) ──────────────────────────────────────────────────────── -->
+{% if is_ra %}
+<div id="edit-rules-modal" class="hidden fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+  <div class="bg-white rounded-xl shadow-xl w-full max-w-2xl p-6 max-h-[90vh] overflow-y-auto">
+    <h2 class="text-lg font-semibold text-gray-900 mb-4">Edit pane</h2>
+    <form id="edit-rules-form" class="space-y-4">
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Pane label *</label>
+        <input id="edit-rules-label" type="text" required maxlength="80"
+               class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+               value="{{ reunion.rules_label }}">
+        <p class="text-xs text-gray-500 mt-1">What this tab is called in the nav. Examples: House Rules, Ground Rules, Charter, Logistics.</p>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Body (markdown)</label>
+        <textarea id="edit-rules-body" rows="14"
+                  class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-amber-400"
+                  placeholder="Supports markdown — headings, lists, bold, links."
+        >{% if let Some(b) = reunion.rules_body %}{{ b }}{% endif %}</textarea>
+        <p class="text-xs text-gray-500 mt-1">
+          Empty body clears the doc back to the empty state.
+          <a href="https://commonmark.org/help/" target="_blank" rel="noopener" class="text-amber-700 hover:underline">Markdown reference ↗</a>
+        </p>
+      </div>
+      <div class="flex justify-end space-x-3 pt-2">
+        <button type="button" onclick="document.getElementById('edit-rules-modal').classList.add('hidden')"
+                class="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">Cancel</button>
+        <button type="submit" class="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold rounded-lg">
+          Save
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
+
+<style>
+/* Lightweight prose styles for the rendered markdown body. Stays in scope
+   via .prose-rules so we don't pollute the rest of the page. */
+.prose-rules { color: var(--text); line-height: 1.6; }
+.prose-rules h1 { font-size: 1.5rem; font-weight: 700; margin: 1.25rem 0 0.5rem; }
+.prose-rules h2 { font-size: 1.25rem; font-weight: 700; margin: 1rem 0 0.5rem; }
+.prose-rules h3 { font-size: 1.05rem; font-weight: 700; margin: 0.75rem 0 0.5rem; }
+.prose-rules h1:first-child,
+.prose-rules h2:first-child,
+.prose-rules h3:first-child { margin-top: 0; }
+.prose-rules p { margin: 0.6rem 0; }
+.prose-rules ul, .prose-rules ol { margin: 0.6rem 0; padding-left: 1.5rem; }
+.prose-rules ul { list-style: disc; }
+.prose-rules ol { list-style: decimal; }
+.prose-rules li { margin: 0.2rem 0; }
+.prose-rules a { color: var(--accent, #b45309); text-decoration: underline; }
+.prose-rules code {
+  background: var(--surface-2, #f5f5f4);
+  padding: 0.1rem 0.35rem;
+  border-radius: 0.25rem;
+  font-size: 0.9em;
+}
+.prose-rules pre {
+  background: var(--surface-2, #f5f5f4);
+  padding: 0.75rem;
+  border-radius: 0.5rem;
+  overflow-x: auto;
+}
+.prose-rules blockquote {
+  border-left: 3px solid var(--border, #e5e7eb);
+  padding-left: 0.75rem;
+  color: var(--muted, #6b7280);
+  margin: 0.6rem 0;
+}
+</style>
+
+{% if is_ra %}
+<script>
+function initRulesEditor() {
+  // No-op for now; reserved for future enhancements (live preview, etc).
+}
+
+document.getElementById('edit-rules-form')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  try {
+    await apiFetch('PATCH', '/reunions/{{ reunion.id }}/rules', {
+      label: document.getElementById('edit-rules-label').value,
+      body:  document.getElementById('edit-rules-body').value,
+    });
+    window.location.reload();
+  } catch (err) { showToast(err.message, 'error'); }
+});
+</script>
+{% endif %}
+{% endblock %}

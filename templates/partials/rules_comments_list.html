@@ -1,0 +1,28 @@
+<!-- Comment list for the rules pane. Swapped in by htmx after a new comment
+     posts so the user sees their message appear without a full reload. -->
+<div id="rules-comments-list" class="space-y-3">
+  {% if comments.is_empty() %}
+  <p class="text-sm" style="color: var(--muted);">No discussion yet — start the thread.</p>
+  {% else %}
+  {% for c in comments %}
+  <div class="card p-3" id="rules-cmt-{{ c.id }}">
+    <div class="flex items-baseline justify-between gap-3 mb-1">
+      <span class="text-sm font-semibold" style="color: var(--text);">{{ c.author_name }}</span>
+      <span class="text-xs" style="color: var(--muted-2);">{{ c.created_at.format("%b %-d, %Y · %-I:%M %p") }}</span>
+    </div>
+    <p class="text-sm whitespace-pre-wrap break-words" style="color: var(--text);">{{ c.content }}</p>
+    {% if c.is_mine %}
+    <div class="mt-2 text-right">
+      <button hx-delete="/api/reunions/{{ reunion_id }}/rules/comments/{{ c.id }}"
+              hx-target="#rules-cmt-{{ c.id }}"
+              hx-swap="delete"
+              hx-confirm="Delete this comment?"
+              class="text-xs" style="color: var(--danger);">
+        Delete
+      </button>
+    </div>
+    {% endif %}
+  </div>
+  {% endfor %}
+  {% endif %}
+</div>

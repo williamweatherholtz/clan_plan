@@ -204,7 +204,7 @@ where
 
 pub struct NavTab {
     pub path: String,
-    pub label: &'static str,
+    pub label: String,
     pub active: bool,
     /// 0 = top-level, 1 = planning/prep, 2 = during-reunion
     pub group: u8,
@@ -214,7 +214,9 @@ pub struct NavTab {
 
 /// Build the reunion sub-navigation.
 /// `active_path` should match the tab's `path` field (e.g. `"activities"`).
-fn reunion_tabs(_reunion_id: Uuid, active_path: &str) -> Vec<NavTab> {
+/// `rules_label` is the per-reunion label for the rules pane (defaults to
+/// "House Rules" in the schema, but each reunion can rename it).
+fn reunion_tabs(_reunion_id: Uuid, active_path: &str, rules_label: &str) -> Vec<NavTab> {
     // (path, label, group)
     // group 0 = always-visible top-level tabs
     // group 1 = "Plan" dropdown (pre-day setup; not relevant once the
@@ -223,16 +225,17 @@ fn reunion_tabs(_reunion_id: Uuid, active_path: &str) -> Vec<NavTab> {
     // Schedule and Today are deliberately not in the bar — Overview adapts
     // by phase and surfaces them. /schedule and /today still resolve, so
     // existing links keep working.
-    let defs: &[(&str, &str, u8)] = &[
-        ("",              "Overview",      0),
-        ("activities",    "Activities",  0),
+    let defs: &[(&str, String, u8)] = &[
+        ("",              "Overview".to_string(),       0),
+        ("activities",    "Activities".to_string(),     0),
+        ("rules",         rules_label.to_string(),      0),
         // Plan dropdown
-        ("availability",  "Dates",         1),
-        ("locations",     "Locations",     1),
-        ("expenses",      "Expenses",      1),
-        ("survey",        "Survey",        1),
-        ("media",         "Photos",        1),
-        ("settings",      "Settings",      1),
+        ("availability",  "Dates".to_string(),          1),
+        ("locations",     "Locations".to_string(),      1),
+        ("expenses",      "Expenses".to_string(),       1),
+        ("survey",        "Survey".to_string(),         1),
+        ("media",         "Photos".to_string(),         1),
+        ("settings",      "Settings".to_string(),       1),
     ];
     // Which group does the active tab belong to?
     let active_group = defs.iter()
@@ -241,7 +244,7 @@ fn reunion_tabs(_reunion_id: Uuid, active_path: &str) -> Vec<NavTab> {
     defs.iter()
         .map(|(path, label, group)| NavTab {
             path: path.to_string(),
-            label,
+            label: label.clone(),
             active: *path == active_path,
             group: *group,
             group_has_active: active_group == Some(*group),
@@ -700,6 +703,24 @@ struct SurveyPage {
     is_ra: bool,
     tabs: Vec<NavTab>,
     tab_label: &'static str,
+}
+
+#[derive(Template)]
+#[template(path = "pages/rules.html")]
+struct RulesPage {
+    user_name: String,
+    is_sysadmin: bool,
+    flash: Option<FlashMsg>,
+    reunion: Reunion,
+    /// Pre-rendered, sanitized HTML from the markdown body. Empty string
+    /// when the RA hasn't written any rules yet — template shows an empty
+    /// state in that case.
+    body_html: String,
+    comments: Vec<crate::routes::rules::RulesCommentViewMine>,
+    current_user_id: Uuid,
+    is_ra: bool,
+    tabs: Vec<NavTab>,
+    tab_label: String,
 }
 
 pub struct ReunionAdminView {
@@ -1375,7 +1396,7 @@ pub async fn reunion_overview(
         user_name: user.display_name.clone(),
         is_sysadmin: user.is_sysadmin(),
         flash,
-        tabs: reunion_tabs(reunion_id, ""),
+        tabs: reunion_tabs(reunion_id, "", &reunion.rules_label),
         tab_label: "Overview",
         reunion,
         reunion_date,
@@ -1456,7 +1477,7 @@ pub async fn availability_page(
         user_name: user.display_name.clone(),
         is_sysadmin: user.is_sysadmin(),
         flash,
-        tabs: reunion_tabs(reunion_id, "availability"),
+        tabs: reunion_tabs(reunion_id, "availability", &reunion.rules_label),
         tab_label: "Availability",
         reunion,
         reunion_date,
@@ -1582,7 +1603,7 @@ pub async fn locations_page(
         user_name: user.display_name.clone(),
         is_sysadmin: user.is_sysadmin(),
         flash,
-        tabs: reunion_tabs(reunion_id, "locations"),
+        tabs: reunion_tabs(reunion_id, "locations", &reunion.rules_label),
         tab_label: "Locations",
         reunion,
         locations,
@@ -1693,7 +1714,7 @@ pub async fn schedule_page(
         user_name: user.display_name.clone(),
         is_sysadmin: user.is_sysadmin(),
         flash,
-        tabs: reunion_tabs(reunion_id, "schedule"),
+        tabs: reunion_tabs(reunion_id, "schedule", &reunion.rules_label),
         tab_label: "Schedule",
         reunion,
         reunion_date,
@@ -1716,7 +1737,7 @@ pub async fn today_page(
         user_name: user.display_name.clone(),
         is_sysadmin: user.is_sysadmin(),
         flash,
-        tabs: reunion_tabs(reunion_id, "today"),
+        tabs: reunion_tabs(reunion_id, "today", &reunion.rules_label),
         tab_label: "Today",
         reunion,
     }
@@ -1856,7 +1877,7 @@ pub async fn activities_page(
         user_name: user.display_name.clone(),
         is_sysadmin: user.is_sysadmin(),
         flash,
-        tabs: reunion_tabs(reunion_id, "activities"),
+        tabs: reunion_tabs(reunion_id, "activities", &reunion.rules_label),
         tab_label: "Activities",
         reunion,
         reunion_date,
@@ -1888,7 +1909,7 @@ pub async fn media_page(
         user_name: user.display_name.clone(),
         is_sysadmin: user.is_sysadmin(),
         flash,
-        tabs: reunion_tabs(reunion_id, "media"),
+        tabs: reunion_tabs(reunion_id, "media", &reunion.rules_label),
         tab_label: "Photos",
         reunion,
         media,
@@ -1968,7 +1989,7 @@ pub async fn expenses_page(
         user_name: user.display_name.clone(),
         is_sysadmin: user.is_sysadmin(),
         flash,
-        tabs: reunion_tabs(reunion_id, "expenses"),
+        tabs: reunion_tabs(reunion_id, "expenses", &reunion.rules_label),
         tab_label: "Expenses",
         reunion,
         expenses,
@@ -2036,10 +2057,44 @@ pub async fn survey_page(
         user_name: user.display_name.clone(),
         is_sysadmin: user.is_sysadmin(),
         flash,
-        tabs: reunion_tabs(reunion_id, "survey"),
+        tabs: reunion_tabs(reunion_id, "survey", &reunion.rules_label),
         tab_label: "Survey",
         reunion,
         questions,
+        is_ra,
+    }
+    .into_response())
+}
+
+// ── GET /reunions/:id/rules ───────────────────────────────────────────────────
+
+pub async fn rules_page(
+    session: Session,
+    State(state): State<AppState>,
+    SlugOrId(reunion_id): SlugOrId,
+) -> Result<Response, Response> {
+    let user = require_login(&session, &state).await?;
+    let reunion = helpers::load_reunion_for_member(&state, &user, reunion_id).await?;
+    let flash = take_flash(&session).await;
+    let is_ra = helpers::user_is_ra(&state, &user, reunion_id).await;
+
+    let body_html = crate::routes::rules::render_markdown(reunion.rules_body.as_deref());
+    let comments =
+        crate::routes::rules::enriched_comments_for_render(&state, reunion_id, user.id)
+            .await
+            .unwrap_or_default();
+
+    let tab_label = reunion.rules_label.clone();
+    Ok(RulesPage {
+        user_name: user.display_name.clone(),
+        is_sysadmin: user.is_sysadmin(),
+        flash,
+        tabs: reunion_tabs(reunion_id, "rules", &reunion.rules_label),
+        tab_label,
+        reunion,
+        body_html,
+        comments,
+        current_user_id: user.id,
         is_ra,
     }
     .into_response())
@@ -2098,7 +2153,7 @@ pub async fn settings_page(
         user_name: user.display_name.clone(),
         is_sysadmin: user.is_sysadmin(),
         flash,
-        tabs: reunion_tabs(reunion_id, "settings"),
+        tabs: reunion_tabs(reunion_id, "settings", &reunion.rules_label),
         tab_label: "Settings",
         reunion,
         family_units,

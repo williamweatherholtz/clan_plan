@@ -28,6 +28,12 @@ pub struct Reunion {
     /// Assumed duration (minutes) for activities with no explicit end time.
     /// Configurable by the RA; defaults to 60.
     pub default_activity_duration_minutes: i32,
+    /// Label for the long-form "rules" pane in the reunion nav. RA-editable.
+    /// Defaults to "House Rules" (set in migration 023); change per-reunion
+    /// to e.g. "Ground Rules" / "Charter" / "Logistics".
+    pub rules_label: String,
+    /// Long-form markdown content for the rules pane. None = no body yet.
+    pub rules_body: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
@@ -313,6 +319,35 @@ impl Reunion {
             .execute(pool)
             .await?;
         Ok(())
+    }
+
+    /// Update the rules pane's label and/or body. Either side can be sent
+    /// independently — callers pass `None` to leave the field unchanged.
+    /// An empty body string is coerced to NULL so the page renders the
+    /// "no rules set yet" empty state instead of a blank div.
+    pub async fn update_rules(
+        pool: &PgPool,
+        reunion_id: Uuid,
+        label: Option<&str>,
+        body: Option<&str>,
+    ) -> AppResult<Reunion> {
+        sqlx::query_as::<_, Reunion>(
+            "UPDATE reunions SET
+                rules_label = COALESCE($1, rules_label),
+                rules_body  = CASE
+                    WHEN $2::text IS NULL THEN rules_body
+                    WHEN $2::text = ''    THEN NULL
+                    ELSE $2::text
+                END,
+                updated_at = NOW()
+             WHERE id = $3 RETURNING *",
+        )
+        .bind(label)
+        .bind(body)
+        .bind(reunion_id)
+        .fetch_optional(pool)
+        .await?
+        .ok_or(AppError::NotFound)
     }
 }
 

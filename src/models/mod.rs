@@ -9,5 +9,6 @@ pub mod host_rotation;
 pub mod location;
 pub mod media;
 pub mod reunion;
+pub mod rules;
 pub mod schedule;
 pub mod user;
