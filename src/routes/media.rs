@@ -8,7 +8,7 @@ use std::{
     io::{Cursor, Write},
     path::PathBuf,
 };
-use tokio::fs;
+use tokio::{fs, io::AsyncWriteExt};
 use uuid::Uuid;
 use zip::{write::SimpleFileOptions, CompressionMethod, ZipWriter};
 
@@ -31,79 +31,117 @@ pub async fn upload_media(
 ) -> AppResult<impl IntoResponse> {
     load_reunion_for_api_member(&state, &user, reunion_id).await?;
 
-    let mut original_filename: Option<String> = None;
-    let mut file_bytes: Option<Vec<u8>> = None;
-    let mut mime: Option<String> = None;
+    // Read the config ceiling once so we don't keep a borrow of AppState
+    // alive across the chunk-streaming await points below.
+    let max_bytes = state.config().max_upload_bytes;
+    let storage_root = PathBuf::from(&state.config().media_storage_path);
 
-    while let Some(field) = multipart
+    while let Some(mut field) = multipart
         .next_field()
         .await
         .map_err(|e| AppError::BadRequest(format!("multipart error: {e}").into()))?
     {
-        if field.name() == Some("file") {
-            original_filename = field.file_name().map(String::from);
-            mime = field.content_type().map(String::from);
-            let bytes = field
-                .bytes()
+        if field.name() != Some("file") {
+            continue;
+        }
+
+        let original_filename = field
+            .file_name()
+            .map(String::from)
+            .unwrap_or_else(|| "upload".into());
+        let mime = field
+            .content_type()
+            .map(String::from)
+            .unwrap_or_else(|| "application/octet-stream".into());
+
+        if !is_allowed_mime(&mime) {
+            return Err(AppError::BadRequest(
+                format!("unsupported file type: {mime}").into(),
+            ));
+        }
+
+        let ext = extension_for_mime(&mime).unwrap_or("bin");
+        let stored_name = format!("{}.{}", Uuid::new_v4(), ext);
+        let reunion_dir = storage_root.join(reunion_id.to_string());
+        fs::create_dir_all(&reunion_dir)
+            .await
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("create media dir: {e}")))?;
+        let abs_path = reunion_dir.join(&stored_name);
+        let relative_path = format!("{}/{}", reunion_id, stored_name);
+
+        // Stream chunks straight to disk. For a 5 GiB upload this keeps
+        // peak RAM at ~chunk size (~8-64 KiB) instead of the full file.
+        // Size is enforced incrementally so an oversize upload aborts as
+        // soon as we cross the ceiling rather than after all bytes arrive.
+        let mut file = fs::File::create(&abs_path)
+            .await
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("create file: {e}")))?;
+        let mut total: u64 = 0;
+
+        loop {
+            let next = field
+                .chunk()
                 .await
-                .map_err(|e| AppError::BadRequest(format!("read error: {e}").into()))?;
-            if bytes.len() as u64 > state.config().max_upload_bytes {
-                return Err(AppError::BadRequest("file exceeds maximum upload size".into()));
+                .map_err(|e| AppError::BadRequest(format!("read chunk: {e}").into()));
+            match next {
+                Ok(Some(chunk)) => {
+                    total = total.saturating_add(chunk.len() as u64);
+                    if total > max_bytes {
+                        drop(file);
+                        let _ = fs::remove_file(&abs_path).await;
+                        return Err(AppError::BadRequest(
+                            "file exceeds maximum upload size".into(),
+                        ));
+                    }
+                    if let Err(e) = file.write_all(&chunk).await {
+                        drop(file);
+                        let _ = fs::remove_file(&abs_path).await;
+                        return Err(AppError::Internal(anyhow::anyhow!("write chunk: {e}")));
+                    }
+                }
+                Ok(None) => break,
+                Err(e) => {
+                    drop(file);
+                    let _ = fs::remove_file(&abs_path).await;
+                    return Err(e);
+                }
             }
-            file_bytes = Some(bytes.to_vec());
-            break;
         }
+
+        if let Err(e) = file.flush().await {
+            let _ = fs::remove_file(&abs_path).await;
+            return Err(AppError::Internal(anyhow::anyhow!("flush file: {e}")));
+        }
+        drop(file);
+
+        // Empty / aborted upload — don't leave a zero-byte tombstone row.
+        if total == 0 {
+            let _ = fs::remove_file(&abs_path).await;
+            return Err(AppError::BadRequest("empty upload".into()));
+        }
+
+        let new = NewMedia {
+            reunion_id,
+            uploaded_by: user.id,
+            stored_filename: stored_name,
+            original_filename,
+            mime_type: mime,
+            file_size_bytes: total as i64,
+            file_path: relative_path,
+        };
+
+        let media = match Media::create(state.db(), new).await {
+            Ok(m) => m,
+            Err(e) => {
+                let _ = fs::remove_file(&abs_path).await;
+                return Err(e);
+            }
+        };
+
+        return Ok((StatusCode::CREATED, Json(media)));
     }
 
-    let bytes =
-        file_bytes.ok_or_else(|| AppError::BadRequest("no 'file' field in upload".into()))?;
-    let original_filename = original_filename.unwrap_or_else(|| "upload".into());
-    let mime = mime.unwrap_or_else(|| "application/octet-stream".into());
-
-    if !is_allowed_mime(&mime) {
-        return Err(AppError::BadRequest(
-            format!("unsupported file type: {mime}").into(),
-        ));
-    }
-
-    let ext = extension_for_mime(&mime).unwrap_or("bin");
-    let stored_name = format!("{}.{}", Uuid::new_v4(), ext);
-
-    let storage_root = PathBuf::from(&state.config().media_storage_path);
-    let reunion_dir = storage_root.join(reunion_id.to_string());
-    fs::create_dir_all(&reunion_dir)
-        .await
-        .map_err(|e| AppError::Internal(anyhow::anyhow!("create media dir: {e}")))?;
-
-    let abs_path = reunion_dir.join(&stored_name);
-    let relative_path = format!("{}/{}", reunion_id, stored_name);
-
-    fs::write(&abs_path, &bytes)
-        .await
-        .map_err(|e| AppError::Internal(anyhow::anyhow!("write file: {e}")))?;
-
-    let new = NewMedia {
-        reunion_id,
-        uploaded_by: user.id,
-        stored_filename: stored_name,
-        original_filename,
-        mime_type: mime,
-        file_size_bytes: bytes.len() as i64,
-        file_path: relative_path,
-    };
-
-    let media = match Media::create(state.db(), new).await {
-        Ok(m) => m,
-        Err(e) => {
-            // Best-effort async cleanup if the DB insert fails. We use
-            // tokio::fs (not std::fs) so we never block the runtime
-            // worker on the syscall.
-            let _ = tokio::fs::remove_file(&abs_path).await;
-            return Err(e);
-        }
-    };
-
-    Ok((StatusCode::CREATED, Json(media)))
+    Err(AppError::BadRequest("no 'file' field in upload".into()))
 }
 
 // ── GET /reunions/:id/media ───────────────────────────────────────────────────

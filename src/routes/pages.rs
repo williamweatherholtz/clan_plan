@@ -670,6 +670,10 @@ struct MediaPage {
     reunion: Reunion,
     media: Vec<Media>,
     can_delete_media: bool,
+    /// Per-file upload ceiling exposed to the JS uploader so it can reject
+    /// oversize files before any bytes leave the client. Sourced from
+    /// config().max_upload_bytes.
+    max_upload_bytes: u64,
     tabs: Vec<NavTab>,
     tab_label: &'static str,
 }
@@ -1914,6 +1918,7 @@ pub async fn media_page(
         reunion,
         media,
         can_delete_media: is_ra || user.is_sysadmin(),
+        max_upload_bytes: state.config().max_upload_bytes,
     }
     .into_response())
 }

@@ -19,13 +19,27 @@
   </div>
 </div>
 
-<!-- Upload form (hidden input + progress) -->
+<!-- Multi-file upload: hidden input + queue panel with per-file progress.
+     Uploads run sequentially (one at a time) — concurrent 5 GiB uploads
+     would saturate most home uplinks and produce no faster real-world
+     throughput. The queue stays visible until the user dismisses or all
+     items have finished. -->
 <form id="upload-form" enctype="multipart/form-data">
-  <input id="upload-input" name="file" type="file" accept="image/*,video/mp4,video/quicktime" class="hidden"
-         onchange="handleUpload(this, '{{ reunion.id }}')">
+  <input id="upload-input" name="file" type="file" multiple
+         accept="image/*,video/mp4,video/quicktime" class="hidden"
+         onchange="enqueueUploads(this.files, '{{ reunion.id }}'); this.value = '';">
 </form>
-<div id="upload-progress" class="hidden mb-4 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-700">
-  Uploading…
+
+<div id="upload-panel" class="hidden mb-5 bg-amber-50 border border-amber-200 rounded-lg p-3">
+  <div class="flex items-center justify-between mb-2">
+    <span id="upload-panel-title" class="text-sm font-semibold text-amber-800">Uploading…</span>
+    <button type="button" id="upload-panel-dismiss"
+            onclick="dismissUploadPanel()"
+            class="text-amber-700 hover:text-amber-900 text-xs">
+      Dismiss
+    </button>
+  </div>
+  <div id="upload-queue" class="space-y-2"></div>
 </div>
 
 {% if media.is_empty() %}
@@ -69,21 +83,233 @@
 {% endif %}
 
 <script>
-async function handleUpload(input, reunionId) {
-  const file = input.files[0];
-  if (!file) return;
-  const progress = document.getElementById('upload-progress');
-  progress.classList.remove('hidden');
-  const form = new FormData();
-  form.append('file', file);
-  try {
-    const res = await fetch(`/api/reunions/${reunionId}/media`, { method: 'POST', body: form });
-    if (!res.ok) { const e = await res.json(); throw new Error(e.error); }
-    window.location.reload();
-  } catch (e) {
-    showToast(e.message, 'error');
-    progress.classList.add('hidden');
+// ── Multi-file upload queue ──────────────────────────────────────────────────
+// Each File becomes a row with name + size + <progress> + status. Uploads
+// run sequentially via XMLHttpRequest (fetch() doesn't expose upload
+// progress events). On success the row turns green; on failure red with a
+// message; the next file in the queue then begins.
+//
+// When the entire queue finishes with at least one success, we reload to
+// pick up the new tiles. If every upload failed, we leave the page alone
+// so the user can read the errors and retry.
+
+const MAX_UPLOAD_BYTES = {{ max_upload_bytes }};
+
+const _uploadState = {
+  queue: [],       // [{ file, reunionId, rowEl, state }]
+  active: null,
+  successes: 0,
+  failures: 0,
+};
+
+function fmtSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  const units = ['KB', 'MB', 'GB', 'TB'];
+  let n = bytes / 1024;
+  let i = 0;
+  while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
+  return n.toFixed(n >= 10 || i === 0 ? 0 : 1) + ' ' + units[i];
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
+}
+
+function enqueueUploads(files, reunionId) {
+  if (!files || !files.length) return;
+  const panel = document.getElementById('upload-panel');
+  const queueEl = document.getElementById('upload-queue');
+  panel.classList.remove('hidden');
+  const wasIdle = _uploadState.active === null && _uploadState.queue.length === 0;
+
+  for (const file of files) {
+    // Client-side size check matches the server ceiling so we fail fast
+    // without uploading bytes we know will be rejected.
+    if (file.size > MAX_UPLOAD_BYTES) {
+      const row = renderQueueRow(file);
+      queueEl.appendChild(row);
+      markRowError(row, `exceeds ${fmtSize(MAX_UPLOAD_BYTES)} per-file limit`);
+      _uploadState.failures++;
+      continue;
+    }
+    const row = renderQueueRow(file);
+    queueEl.appendChild(row);
+    _uploadState.queue.push({ file, reunionId, rowEl: row });
+  }
+  updatePanelTitle();
+  if (wasIdle) processNext();
+}
+
+function renderQueueRow(file) {
+  const row = document.createElement('div');
+  row.className = 'flex items-center gap-3 text-sm';
+  row.innerHTML = `
+    <div class="flex-1 min-w-0">
+      <div class="flex items-baseline justify-between gap-2">
+        <span class="font-medium text-gray-800 truncate" title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</span>
+        <span class="text-xs text-gray-500 flex-shrink-0">${fmtSize(file.size)}</span>
+      </div>
+      <progress class="w-full mt-1 h-2 rounded overflow-hidden" max="100" value="0"></progress>
+      <div class="row-status text-xs text-amber-700 mt-0.5">Queued…</div>
+    </div>
+    <button type="button" class="row-cancel text-xs text-gray-500 hover:text-red-600 flex-shrink-0">Cancel</button>
+  `;
+  row.querySelector('.row-cancel').addEventListener('click', () => cancelRow(row));
+  return row;
+}
+
+function cancelRow(row) {
+  // If this is the active upload, abort the XHR; the onerror/onloadend
+  // path will advance the queue. If it's still queued, just remove it.
+  if (_uploadState.active && _uploadState.active.rowEl === row && _uploadState.active.xhr) {
+    _uploadState.active.cancelled = true;
+    _uploadState.active.xhr.abort();
+    return;
+  }
+  const idx = _uploadState.queue.findIndex(q => q.rowEl === row);
+  if (idx >= 0) _uploadState.queue.splice(idx, 1);
+  markRowCancelled(row);
+  updatePanelTitle();
+}
+
+function markRowError(row, msg) {
+  const status = row.querySelector('.row-status');
+  if (status) {
+    status.textContent = 'Failed: ' + msg;
+    status.className = 'row-status text-xs text-red-600 mt-0.5';
+  }
+  const cancel = row.querySelector('.row-cancel');
+  if (cancel) cancel.remove();
+}
+
+function markRowDone(row) {
+  const status = row.querySelector('.row-status');
+  if (status) {
+    status.textContent = '✓ Uploaded';
+    status.className = 'row-status text-xs text-green-700 mt-0.5';
+  }
+  const progress = row.querySelector('progress');
+  if (progress) progress.value = 100;
+  const cancel = row.querySelector('.row-cancel');
+  if (cancel) cancel.remove();
+}
+
+function markRowCancelled(row) {
+  const status = row.querySelector('.row-status');
+  if (status) {
+    status.textContent = 'Cancelled';
+    status.className = 'row-status text-xs text-gray-500 mt-0.5';
+  }
+  const cancel = row.querySelector('.row-cancel');
+  if (cancel) cancel.remove();
+}
+
+function updatePanelTitle() {
+  const total =
+    _uploadState.successes +
+    _uploadState.failures +
+    (_uploadState.active ? 1 : 0) +
+    _uploadState.queue.length;
+  const titleEl = document.getElementById('upload-panel-title');
+  if (!titleEl) return;
+  if (_uploadState.active || _uploadState.queue.length > 0) {
+    const done = _uploadState.successes + _uploadState.failures;
+    titleEl.textContent = `Uploading ${done + 1} of ${total}…`;
+  } else {
+    titleEl.textContent =
+      `${_uploadState.successes} uploaded` +
+      (_uploadState.failures ? `, ${_uploadState.failures} failed` : '');
   }
 }
+
+function processNext() {
+  const item = _uploadState.queue.shift();
+  if (!item) {
+    _uploadState.active = null;
+    updatePanelTitle();
+    // Reload to refresh the grid if anything succeeded; otherwise leave
+    // the panel up so the user can read errors.
+    if (_uploadState.successes > 0) {
+      setTimeout(() => window.location.reload(), 600);
+    }
+    return;
+  }
+  _uploadState.active = item;
+  startUpload(item);
+  updatePanelTitle();
+}
+
+function startUpload(item) {
+  const { file, reunionId, rowEl } = item;
+  const status = rowEl.querySelector('.row-status');
+  const progress = rowEl.querySelector('progress');
+  if (status) status.textContent = 'Uploading…';
+
+  const xhr = new XMLHttpRequest();
+  item.xhr = xhr;
+  xhr.open('POST', `/api/reunions/${reunionId}/media`, true);
+
+  xhr.upload.addEventListener('progress', (e) => {
+    if (e.lengthComputable && progress) {
+      progress.value = (e.loaded / e.total) * 100;
+      if (status) {
+        status.textContent =
+          `${fmtSize(e.loaded)} / ${fmtSize(e.total)} (${Math.round((e.loaded / e.total) * 100)}%)`;
+      }
+    }
+  });
+
+  xhr.addEventListener('load', () => {
+    if (xhr.status >= 200 && xhr.status < 300) {
+      markRowDone(rowEl);
+      _uploadState.successes++;
+    } else {
+      let msg = `server returned ${xhr.status}`;
+      try {
+        const err = JSON.parse(xhr.responseText);
+        if (err && err.error) msg = err.error;
+      } catch (_) {}
+      markRowError(rowEl, msg);
+      _uploadState.failures++;
+    }
+    processNext();
+  });
+
+  xhr.addEventListener('error', () => {
+    markRowError(rowEl, 'network error');
+    _uploadState.failures++;
+    processNext();
+  });
+
+  xhr.addEventListener('abort', () => {
+    if (item.cancelled) markRowCancelled(rowEl);
+    else markRowError(rowEl, 'aborted');
+    processNext();
+  });
+
+  const form = new FormData();
+  form.append('file', file);
+  xhr.send(form);
+}
+
+function dismissUploadPanel() {
+  // Only allow dismissing when nothing is in flight — otherwise the user
+  // loses visibility into a still-uploading file.
+  if (_uploadState.active || _uploadState.queue.length > 0) return;
+  document.getElementById('upload-panel').classList.add('hidden');
+  document.getElementById('upload-queue').innerHTML = '';
+  _uploadState.successes = 0;
+  _uploadState.failures = 0;
+}
+
+// Warn the user if they try to leave while uploads are running.
+window.addEventListener('beforeunload', (e) => {
+  if (_uploadState.active || _uploadState.queue.length > 0) {
+    e.preventDefault();
+    e.returnValue = '';
+  }
+});
 </script>
 {% endblock %}

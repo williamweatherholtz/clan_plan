@@ -67,8 +67,12 @@ impl Config {
 
             media_storage_path: env::var("MEDIA_STORAGE_PATH")
                 .unwrap_or_else(|_| "./media".into()),
+            // 5 GiB per-file ceiling. Multipart upload streams chunks to disk
+            // (see routes::media::upload_media), so the only cost of a high
+            // ceiling is the inbound bytes themselves — not RAM. Tune lower
+            // via MAX_UPLOAD_BYTES env var if you want stricter limits.
             max_upload_bytes: env::var("MAX_UPLOAD_BYTES")
-                .unwrap_or_else(|_| "104857600".into())
+                .unwrap_or_else(|_| "5368709120".into())
                 .parse()
                 .context("MAX_UPLOAD_BYTES must be a number")?,
 
